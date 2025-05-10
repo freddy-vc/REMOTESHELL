@@ -30,5 +30,5 @@ func main() {
 
 	resComando, _ := shellProy.Output()
 
-	fmt.Print("Oper#5139 ", string(resComando), "\n")
+	fmt.Print("Proyoper# ", string(resComando), "\n")
 }
