@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"strings"
 )
 
 func main() {
@@ -11,39 +12,46 @@ func main() {
 	fmt.Println("*    SERVIDOR proy. oper 2025      *")
 	fmt.Println("************************************")
 
-<<<<<<< HEAD
 	socketInicial, _ := net.Listen("tcp", "192.168.1.54:1625")
-	fmt.Println("Soocket  creado - OK")
-=======
-	// Crear el socket y escuchar en el puerto 1625
-	socketInicial, err := net.Listen("tcp", ":1625")
-	if err != nil {
-		fmt.Println("Error al crear el socket:", err)
-		return
-	}
 	fmt.Println("Socket creado - OK")
->>>>>>> 2fec122068e727ece7b46f2affeb19e04a155ef1
 	fmt.Println("Esperando Conexiones...")
+	defer socketInicial.Close()
 
-	// Aceptar una sola conexión
-	socket, err := socketInicial.Accept()
-	if err != nil {
-		fmt.Println("Error al aceptar conexión:", err)
-		return
-	}
-	fmt.Println("Cliente Conectado:", socket.RemoteAddr())
-
-	// Mantener la conexión activa leyendo mensajes del cliente
-	reader := bufio.NewReader(socket)
 	for {
-		mensaje, err := reader.ReadString('\n')
+		socket, err := socketInicial.Accept()
 		if err != nil {
-			fmt.Println("El cliente se desconectó.")
-			break
+			fmt.Println("Error al aceptar conexión:", err)
+			continue
 		}
-		fmt.Print("Mensaje recibido: ", mensaje)
 
-		// Opcional: responder al cliente
-		socket.Write([]byte("Mensaje recibido\n"))
+		fmt.Printf("Cliente conectado desde: %s\n", socket.RemoteAddr())
+		go manejarCliente(socket)
+	}
+}
+
+func manejarCliente(socket net.Conn) {
+	defer socket.Close()
+	reader := bufio.NewReader(socket)
+
+	for {
+		// Leer comando del cliente
+		comando, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("Cliente %s desconectado\n", socket.RemoteAddr())
+			return
+		}
+
+		comando = strings.TrimSpace(comando)
+		fmt.Printf("Comando recibido de %s: %s\n", socket.RemoteAddr(), comando)
+
+		// Ejecutar el comando
+		respuesta := ExecuteCommand(comando)
+
+		// Enviar respuesta al cliente
+		_, err = socket.Write([]byte(respuesta))
+		if err != nil {
+			fmt.Printf("Error al enviar respuesta a %s: %v\n", socket.RemoteAddr(), err)
+			return
+		}
 	}
 }

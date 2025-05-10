@@ -17,11 +17,13 @@ func main() {
 	}
 
 	// Intentar conexión con el servidor
-	err = Conectar(ip, puerto, periodoReporte)
+	conn, err := Conectar(ip, puerto, periodoReporte)
 	if err != nil {
 		fmt.Printf("Error al conectar con el servidor: %v\n", err)
 		os.Exit(1)
 	}
+
+	StartCommandShell(conn)
 }
 
 func SolicitarParametros() (string, string, int, error) {

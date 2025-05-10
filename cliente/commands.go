@@ -52,8 +52,8 @@ func ExecuteRemoteCommand(conn net.Conn) {
 // StartCommandShell inicia el shell de comandos remoto
 func StartCommandShell(conn net.Conn) {
 	fmt.Println("*******************************************")
-	fmt.Println("*       SHELL REMOTO - CLIENTE           *")
-	fmt.Println("* Escriba 'bye' para salir               *")
+	fmt.Println("*       SHELL REMOTO - CLIENTE            *")
+	fmt.Println("*      Escriba 'bye' para salir           *")
 	fmt.Println("*******************************************")
 
 	ExecuteRemoteCommand(conn)
