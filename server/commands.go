@@ -22,6 +22,6 @@ func ExecuteCommand(comando string) string {
 		return fmt.Sprintf("Error al ejecutar comando: %v\n", err)
 	}
 
-	resultado := fmt.Sprintf("Proyoper# %s", string(resComando))
+	resultado := fmt.Sprintf("%s", string(resComando))
 	return resultado
 }
