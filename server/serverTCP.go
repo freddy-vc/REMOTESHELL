@@ -4,16 +4,25 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 )
 
 func main() {
+	// Leer configuración
+	config, err := LeerConfig("config.conf")
+	if err != nil {
+		fmt.Printf("Error al leer configuración: %v\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Println("************************************")
 	fmt.Println("*    SERVIDOR proy. oper 2025      *")
 	fmt.Println("************************************")
 
-	socketInicial, _ := net.Listen("tcp", "192.168.1.54:1625")
-	fmt.Println("Socket creado - OK")
+	// Usar el puerto de la configuración
+	socketInicial, _ := net.Listen("tcp", ":"+config.Puerto)
+	fmt.Println("Socket creado - OK en puerto", config.Puerto)
 	fmt.Println("Esperando Conexiones...")
 	defer socketInicial.Close()
 
@@ -38,11 +47,17 @@ func manejarCliente(socket net.Conn) {
 		comando, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Printf("Cliente %s desconectado\n", socket.RemoteAddr())
-			return
+			os.Exit(0) // Cierra el servidor cuando el cliente se desconecta
 		}
 
 		comando = strings.TrimSpace(comando)
 		fmt.Printf("Comando recibido de %s: %s\n", socket.RemoteAddr(), comando)
+
+		// Si es un reporte, solo mostrarlo y no ejecutar como comando
+		if strings.HasPrefix(comando, "__REPORTE__:") {
+			fmt.Printf("Reporte recibido: %s\n", comando)
+			continue
+		}
 
 		// Ejecutar el comando
 		respuesta := ExecuteCommand(comando)
@@ -51,7 +66,7 @@ func manejarCliente(socket net.Conn) {
 		_, err = socket.Write([]byte(respuesta))
 		if err != nil {
 			fmt.Printf("Error al enviar respuesta a %s: %v\n", socket.RemoteAddr(), err)
-			return
+			os.Exit(0) // También cierra si hay error enviando respuesta
 		}
 	}
 }

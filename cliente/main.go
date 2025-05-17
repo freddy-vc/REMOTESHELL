@@ -29,7 +29,9 @@ func LeerConfigIntentos1(ruta string) (int, error) {
 
 func main() {
 	intentosMax, _ := LeerConfigIntentos1("../server/config.conf")
-	for intentos := 0; intentos < intentosMax; {
+	intentos := 0
+	conectado := false
+	for intentos = 0; intentos < intentosMax; {
 		// Solicitar parámetros de conexión en cada intento
 		ip, puerto, periodoReporte, err := SolicitarParametros()
 		if err != nil {
@@ -47,12 +49,17 @@ func main() {
 			continue // vuelve a pedir los parámetros de conexión
 		}
 
+		// Iniciar el envío periódico de reportes en una goroutine
+		go StartReport(conn, periodoReporte)
 		StartCommandShell(conn)
+		conectado = true
 		break // sale del bucle principal si la conexión y autenticación fueron exitosas
 	}
 
-	fmt.Println("Se alcanzó el número máximo de intentos fallidos de conexión.")
-	os.Exit(1)
+	if !conectado && intentos >= intentosMax {
+		fmt.Println("Se alcanzó el número máximo de intentos fallidos de conexión.")
+		os.Exit(1)
+	}
 }
 
 func SolicitarParametros() (string, string, int, error) {
