@@ -8,22 +8,51 @@ import (
 	"strings"
 )
 
+func LeerConfigIntentos1(ruta string) (int, error) {
+	file, err := os.Open(ruta)
+	if err != nil {
+		return 3, nil // Valor por defecto si no se encuentra el archivo
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "INTENTOS_MAX=") {
+			var intentos int
+			fmt.Sscanf(line, "INTENTOS_MAX=%d", &intentos)
+			return intentos, nil
+		}
+	}
+	return 3, nil // Valor por defecto si no se encuentra la clave
+}
+
 func main() {
-	// Obtener parámetros de conexión
-	ip, puerto, periodoReporte, err := SolicitarParametros()
-	if err != nil {
-		fmt.Printf("Error al obtener parámetros: %v\n", err)
-		os.Exit(1)
+	intentosMax, _ := LeerConfigIntentos1("../server/config.conf")
+	for intentos := 0; intentos < intentosMax; {
+		// Solicitar parámetros de conexión en cada intento
+		ip, puerto, periodoReporte, err := SolicitarParametros()
+		if err != nil {
+			fmt.Printf("Error al obtener parámetros: %v\n", err)
+			os.Exit(1)
+		}
+
+		conn, err := Conectar(ip, puerto, periodoReporte)
+		if err != nil {
+			fmt.Printf("Error al conectar o autenticar con el servidor: %v\n", err)
+			intentos++
+			if intentos < intentosMax {
+				fmt.Printf("Intento %d de %d. Intente nuevamente.\n", intentos+1, intentosMax)
+			}
+			continue // vuelve a pedir los parámetros de conexión
+		}
+
+		StartCommandShell(conn)
+		break // sale del bucle principal si la conexión y autenticación fueron exitosas
 	}
 
-	// Intentar conexión con el servidor
-	conn, err := Conectar(ip, puerto, periodoReporte)
-	if err != nil {
-		fmt.Printf("Error al conectar con el servidor: %v\n", err)
-		os.Exit(1)
-	}
-
-	StartCommandShell(conn)
+	fmt.Println("Se alcanzó el número máximo de intentos fallidos de conexión.")
+	os.Exit(1)
 }
 
 func SolicitarParametros() (string, string, int, error) {
