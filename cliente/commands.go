@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 // ExecuteRemoteCommand envía un comando al servidor remoto y muestra la respuesta
@@ -37,10 +38,16 @@ func ExecuteRemoteCommand(conn net.Conn) {
 		}
 
 		// Recibir la respuesta del servidor
+		// En la parte donde se lee la respuesta
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second)) // Timeout de 5 segundos
 		buffer := make([]byte, 4096)
 		n, err := conn.Read(buffer)
 		if err != nil {
-			fmt.Println("Error al recibir la respuesta:", err)
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				fmt.Println("Tiempo de espera agotado. El comando puede haberse ejecutado correctamente.")
+			} else {
+				fmt.Println("Error al recibir la respuesta:", err)
+			}
 			continue
 		}
 
