@@ -2,10 +2,18 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
-	"strings"
 	"runtime"
+	"strings"
 )
+
+var currentDir string
+
+func init() {
+	// Inicializar el directorio actual
+	currentDir, _ = os.Getwd()
+}
 
 func ExecuteCommand(comando string) string {
 	comando = strings.TrimSpace(comando)
@@ -14,6 +22,23 @@ func ExecuteCommand(comando string) string {
 	}
 
 	fmt.Printf("Ejecutando comando: %s\n", comando)
+
+	// Manejar el comando cd de forma especial
+	if strings.HasPrefix(comando, "cd ") {
+		// Extraer el directorio
+		dir := strings.TrimPrefix(comando, "cd ")
+		dir = strings.TrimSpace(dir)
+
+		// Cambiar el directorio
+		err := os.Chdir(dir)
+		if err != nil {
+			return fmt.Sprintf("Error al cambiar al directorio %s: %v\n", dir, err)
+		}
+
+		// Actualizar el directorio actual
+		currentDir, _ = os.Getwd()
+		return fmt.Sprintf("Directorio cambiado a: %s\n", currentDir)
+	}
 
 	// Determinar el shell a usar según el sistema operativo
 	var cmd *exec.Cmd
@@ -24,6 +49,9 @@ func ExecuteCommand(comando string) string {
 		// En sistemas Unix, usar /bin/sh
 		cmd = exec.Command("/bin/sh", "-c", comando)
 	}
+
+	// Establecer el directorio de trabajo
+	cmd.Dir = currentDir
 
 	// Capturar tanto la salida estándar como los errores
 	output, err := cmd.CombinedOutput()
