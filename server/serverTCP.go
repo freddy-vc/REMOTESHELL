@@ -40,16 +40,17 @@ func main() {
 
 func manejarCliente(socket net.Conn, config *Config) {
 	defer socket.Close()
-    
-    // Verificar que la IP del cliente está permitida
-    clienteIP := strings.Split(socket.RemoteAddr().String(), ":")[0]
-    if clienteIP != config.IPPermitida {
-        fmt.Printf("Conexión rechazada de IP no permitida: %s\n", clienteIP)
-        return
-    }
-    
-    fmt.Printf("Cliente con IP permitida conectado: %s\n", clienteIP)
-    reader := bufio.NewReader(socket)
+
+	// Verificar que la IP del cliente está permitida
+	clienteIP := strings.Split(socket.RemoteAddr().String(), ":")[0]
+	if clienteIP != config.IPPermitida {
+		fmt.Printf("Conexión rechazada de IP no permitida: %s\n", clienteIP)
+		fmt.Println("Terminando el servidor por seguridad...")
+		os.Exit(1) // Termina el programa con código de error 1
+	}
+
+	fmt.Printf("Cliente con IP permitida conectado: %s\n", clienteIP)
+	reader := bufio.NewReader(socket)
 
 	for {
 		// Leer comando del cliente
