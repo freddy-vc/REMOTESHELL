@@ -34,13 +34,22 @@ func main() {
 		}
 
 		fmt.Printf("Cliente conectado desde: %s\n", socket.RemoteAddr())
-		go manejarCliente(socket)
+		go manejarCliente(socket, config)
 	}
 }
 
-func manejarCliente(socket net.Conn) {
+func manejarCliente(socket net.Conn, config *Config) {
 	defer socket.Close()
-	reader := bufio.NewReader(socket)
+    
+    // Verificar que la IP del cliente está permitida
+    clienteIP := strings.Split(socket.RemoteAddr().String(), ":")[0]
+    if clienteIP != config.IPPermitida {
+        fmt.Printf("Conexión rechazada de IP no permitida: %s\n", clienteIP)
+        return
+    }
+    
+    fmt.Printf("Cliente con IP permitida conectado: %s\n", clienteIP)
+    reader := bufio.NewReader(socket)
 
 	for {
 		// Leer comando del cliente
