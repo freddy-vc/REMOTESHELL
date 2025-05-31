@@ -24,18 +24,18 @@ func ExecuteCommand(comando string) string {
 
 	comando = strings.TrimSpace(comando)
 	if comando == "" {
-		return "Error: comando vacío\n"
+		return "\n" // Retorna solo un salto de línea para comandos vacíos
 	}
 
 	// Manejar reportes del cliente
 	if strings.HasPrefix(comando, "__REPORTE__:") {
 		fmt.Println(comando) // Imprimir el reporte en el servidor
-		return "Reporte recibido\n"
+		return "\n"          // Retorna solo un salto de línea para reportes
 	}
 
 	// Manejar comando de sincronización
 	if comando == "__SYNC__" {
-		return "OK\n"
+		return "\n" // Retorna solo un salto de línea para sincronización
 	}
 
 	fmt.Printf("Ejecutando comando UNIX: %s\n", comando)
