@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -18,38 +20,6 @@ var (
 	clientCount   int32
 )
 
-func iniciarServidor() {
-	// Leer configuración
-	config, err := LeerConfig("config.conf")
-	if err != nil {
-		fmt.Printf("Error al leer configuración: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("************************************")
-	fmt.Println("*    SERVIDOR proy. oper 2025      *")
-	fmt.Println("************************************")
-
-	// Usar el puerto de la configuración
-	socketInicial, _ := net.Listen("tcp", ":"+config.Puerto)
-	fmt.Println("Socket creado - OK en puerto", config.Puerto)
-	fmt.Println("Esperando Conexiones...")
-	defer socketInicial.Close()
-
-	for {
-		socket, err := socketInicial.Accept()
-		if err != nil {
-			fmt.Println("Error al aceptar conexión:", err)
-			continue
-		}
-
-		fmt.Printf("Cliente conectado desde: %s\n", socket.RemoteAddr())
-		activeClients.Add(1)
-		atomic.AddInt32(&clientCount, 1)
-		go manejarCliente(socket, config)
-	}
-}
-
 func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 	// Leer usuario
 	usuario, err := reader.ReadString('\n')
@@ -58,20 +28,67 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 	}
 	usuario = strings.TrimSpace(usuario)
 
-	// Verificar si el usuario está en la lista de usuarios permitidos
-	usuarioPermitido := false
-	for _, u := range config.UsuariosPermitidos {
-		if strings.TrimSpace(u) == usuario {
-			usuarioPermitido = true
-			break
+	// Leer contraseña
+	password, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("error al leer contraseña: %v", err)
+	}
+	password = strings.TrimSpace(password)
+
+	fmt.Printf("Intento de autenticación del usuario: '%s'\n", usuario)
+
+	// Calcular hash SHA256 de la contraseña
+	hash := sha256.Sum256([]byte(password))
+	hashStr := hex.EncodeToString(hash[:])
+
+	// Leer archivo de usuarios y contraseñas
+	file, err := os.Open("users.db")
+	if err != nil {
+		return "", fmt.Errorf("error al abrir base de datos de usuarios: %v", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		userFile := strings.TrimSpace(parts[0])
+		passFile := strings.TrimSpace(parts[1])
+
+		// Verificar si el usuario y contraseña coinciden
+		if usuario == userFile && hashStr == passFile {
+			fmt.Printf("Usuario '%s' autenticado exitosamente\n", usuario)
+			return usuario, nil
 		}
 	}
 
-	if !usuarioPermitido {
-		return "", fmt.Errorf("usuario no autorizado")
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("error al leer base de datos de usuarios: %v", err)
 	}
 
-	return usuario, nil
+	fmt.Printf("Usuario '%s' no autorizado\n", usuario)
+	return "", fmt.Errorf("usuario o contraseña incorrectos")
+}
+
+func procesarComando(comando string, usuario string, addr string) string {
+	comando = strings.TrimSpace(comando)
+	fmt.Printf("Comando recibido de %s (%s): %s\n", usuario, addr, comando)
+
+	// Si es un reporte, solo mostrarlo y no ejecutar como comando
+	if strings.HasPrefix(comando, "__REPORTE__:") {
+		fmt.Printf("Reporte recibido de %s: %s\n", usuario, comando)
+		return "Reporte recibido\n"
+	}
+
+	// Ejecutar el comando de manera sincronizada
+	commandMutex.Lock()
+	respuesta := ExecuteCommand(comando)
+	commandMutex.Unlock()
+
+	return respuesta
 }
 
 func manejarCliente(socket net.Conn, config *Config) {
@@ -112,9 +129,12 @@ func manejarCliente(socket net.Conn, config *Config) {
 
 	fmt.Printf("Usuario %s autenticado desde %s\n", usuario, socket.RemoteAddr())
 
+	// Buffer para leer comandos
+	cmdBuffer := make([]byte, 4096)
+
 	for {
 		// Leer comando del cliente
-		comando, err := reader.ReadString('\n')
+		n, err := reader.Read(cmdBuffer)
 		if err != nil {
 			if err == io.EOF {
 				fmt.Printf("Cliente %s desconectado\n", socket.RemoteAddr())
@@ -124,24 +144,8 @@ func manejarCliente(socket net.Conn, config *Config) {
 			return
 		}
 
-		comando = strings.TrimSpace(comando)
-		fmt.Printf("Comando recibido de %s (%s): %s\n", usuario, socket.RemoteAddr(), comando)
-
-		// Si es un reporte, solo mostrarlo y no ejecutar como comando
-		if strings.HasPrefix(comando, "__REPORTE__:") {
-			fmt.Printf("Reporte recibido de %s: %s\n", usuario, comando)
-			continue
-		}
-
-		// Ejecutar el comando de manera sincronizada
-		commandMutex.Lock()
-		respuesta := ExecuteCommand(comando)
-		commandMutex.Unlock()
-
-		// Asegurar que la respuesta termine con un salto de línea
-		if !strings.HasSuffix(respuesta, "\n") {
-			respuesta += "\n"
-		}
+		comando := string(cmdBuffer[:n])
+		respuesta := procesarComando(comando, usuario, socket.RemoteAddr().String())
 
 		// Enviar respuesta al cliente
 		_, err = socket.Write([]byte(respuesta))
@@ -149,6 +153,38 @@ func manejarCliente(socket net.Conn, config *Config) {
 			fmt.Printf("Error al enviar respuesta a %s: %v\n", socket.RemoteAddr(), err)
 			return
 		}
+	}
+}
+
+func iniciarServidor() {
+	// Leer configuración
+	config, err := LeerConfig("config.conf")
+	if err != nil {
+		fmt.Printf("Error al leer configuración: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("************************************")
+	fmt.Println("*    SERVIDOR proy. oper 2025      *")
+	fmt.Println("************************************")
+
+	// Usar el puerto de la configuración
+	socketInicial, _ := net.Listen("tcp", ":"+config.Puerto)
+	fmt.Println("Socket creado - OK en puerto", config.Puerto)
+	fmt.Println("Esperando Conexiones...")
+	defer socketInicial.Close()
+
+	for {
+		socket, err := socketInicial.Accept()
+		if err != nil {
+			fmt.Println("Error al aceptar conexión:", err)
+			continue
+		}
+
+		fmt.Printf("Cliente conectado desde: %s\n", socket.RemoteAddr())
+		activeClients.Add(1)
+		atomic.AddInt32(&clientCount, 1)
+		go manejarCliente(socket, config)
 	}
 }
 

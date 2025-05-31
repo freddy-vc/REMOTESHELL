@@ -137,16 +137,33 @@ func obtenerIPLocal() (string, error) {
 
 func autenticarConServidor(socket net.Conn) error {
 	reader := bufio.NewReader(os.Stdin)
+
+	// Solicitar usuario
 	fmt.Print("Ingrese su nombre de usuario: ")
 	usuario, err := reader.ReadString('\n')
 	if err != nil {
 		return fmt.Errorf("error al leer usuario: %v", err)
 	}
+	usuario = strings.TrimSpace(usuario) + "\n"
 
 	// Enviar usuario al servidor
 	_, err = socket.Write([]byte(usuario))
 	if err != nil {
 		return fmt.Errorf("error al enviar usuario: %v", err)
+	}
+
+	// Solicitar contraseña
+	fmt.Print("Ingrese su contraseña: ")
+	password, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("error al leer contraseña: %v", err)
+	}
+	password = strings.TrimSpace(password) + "\n"
+
+	// Enviar contraseña al servidor
+	_, err = socket.Write([]byte(password))
+	if err != nil {
+		return fmt.Errorf("error al enviar contraseña: %v", err)
 	}
 
 	// Configurar un timeout para la respuesta
@@ -164,12 +181,13 @@ func autenticarConServidor(socket net.Conn) error {
 	}
 
 	respuestaStr := strings.TrimSpace(string(respuesta[:n]))
+	fmt.Printf("Respuesta del servidor: '%s'\n", respuestaStr)
 
 	switch respuestaStr {
 	case "AUTH_OK":
 		return nil
 	case "AUTH_ERROR":
-		return fmt.Errorf("usuario no autorizado")
+		return fmt.Errorf("usuario o contraseña incorrectos")
 	case "IP_ERROR":
 		return fmt.Errorf("IP no permitida")
 	default:

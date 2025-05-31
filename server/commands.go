@@ -6,9 +6,13 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 )
 
-var currentDir string
+var (
+	currentDir string
+	cmdMutex   sync.Mutex
+)
 
 func init() {
 	// Inicializar el directorio actual
@@ -16,6 +20,9 @@ func init() {
 }
 
 func ExecuteCommand(comando string) string {
+	cmdMutex.Lock()
+	defer cmdMutex.Unlock()
+
 	comando = strings.TrimSpace(comando)
 	if comando == "" {
 		return "Error: comando vacío\n"
@@ -57,6 +64,11 @@ func ExecuteCommand(comando string) string {
 	output, err := cmd.CombinedOutput()
 	resultado := string(output)
 
+	// Asegurarse de que la salida termine con un salto de línea
+	if !strings.HasSuffix(resultado, "\n") {
+		resultado += "\n"
+	}
+
 	// Si hay error pero también hay salida, mostrar la salida
 	if err != nil {
 		if resultado != "" {
@@ -66,7 +78,7 @@ func ExecuteCommand(comando string) string {
 	}
 
 	// Si no hay salida, enviar mensaje de confirmación
-	if resultado == "" {
+	if strings.TrimSpace(resultado) == "" {
 		return fmt.Sprintf("Comando '%s' ejecutado correctamente\n", comando)
 	}
 
