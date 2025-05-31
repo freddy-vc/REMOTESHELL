@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -31,38 +30,23 @@ func LeerConfigIntentos1(ruta string) (int, string, error) {
 	return intentos, ipPermitida, nil
 }
 
-func validarParametros() (string, string, int, error) {
-	if len(os.Args) != 4 {
-		return "", "", 0, fmt.Errorf("Uso: %s <DireccionIP> <Puerto> <TiempoReporte>\nEjemplo: %s 192.168.1.100 1625 5", os.Args[0], os.Args[0])
-	}
-
-	ip := os.Args[1]
-	puerto := os.Args[2]
-
-	// Validar que la IP tenga un formato válido
-	if net.ParseIP(ip) == nil {
-		return "", "", 0, fmt.Errorf("La dirección IP '%s' no es válida", ip)
-	}
-
-	// Validar que el puerto sea un número válido
-	puertoint, err := strconv.Atoi(puerto)
-	if err != nil || puertoint < 1 || puertoint > 65535 {
-		return "", "", 0, fmt.Errorf("El puerto debe ser un número entre 1 y 65535")
-	}
-
-	// Validar y convertir el tiempo de reporte
-	periodo, err := strconv.Atoi(os.Args[3])
-	if err != nil {
-		return "", "", 0, fmt.Errorf("El tiempo de reporte debe ser un número válido")
-	}
-	if periodo <= 0 {
-		return "", "", 0, fmt.Errorf("El tiempo de reporte debe ser mayor a 0")
-	}
-
-	return ip, puerto, periodo, nil
-}
-
 func main() {
+	// Verificar argumentos
+	if len(os.Args) != 4 {
+		fmt.Println("Uso: ./client <IP> <Puerto> <PeriodoReporte>")
+		fmt.Println("Ejemplo: ./client 10.1.10.3 2025 5")
+		os.Exit(1)
+	}
+
+	serverIP := os.Args[1]
+	serverPort := os.Args[2]
+	periodoReporte, err := strconv.Atoi(os.Args[3])
+	if err != nil {
+		fmt.Printf("Error: el periodo de reporte debe ser un número entero: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Leer configuración y validar IP del cliente
 	intentosMax, ipPermitida, _ := LeerConfigIntentos1("../server/config.conf")
 
 	// Verificar si la IP local coincide con la IP permitida
@@ -80,17 +64,10 @@ func main() {
 		}
 	}
 
-	// Obtener y validar parámetros de línea de comandos
-	ip, puerto, periodoReporte, err := validarParametros()
-	if err != nil {
-		fmt.Println("Error:", err)
-		os.Exit(1)
-	}
-
 	intentos := 0
 	conectado := false
 	for intentos = 0; intentos < intentosMax; {
-		conn, username, err := Conectar(ip, puerto, periodoReporte)
+		conn, username, err := Conectar(serverIP, serverPort, periodoReporte)
 		if err != nil {
 			fmt.Printf("Error al conectar o autenticar con el servidor: %v\n", err)
 			intentos++
@@ -104,7 +81,7 @@ func main() {
 		go StartReport(conn, periodoReporte)
 		StartCommandShell(conn, username)
 		conectado = true
-		break // sale del bucle principal si la conexión y autenticación fueron exitosas
+		break
 	}
 
 	if !conectado && intentos >= intentosMax {

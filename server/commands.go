@@ -6,6 +6,12 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/mem"
+	"github.com/shirou/gopsutil/v3/process"
 )
 
 var (
@@ -16,6 +22,44 @@ var (
 func init() {
 	// Inicializar el directorio actual
 	currentDir, _ = os.Getwd()
+}
+
+func getSystemInfo() (cpuUsage float64, memUsage float64, memFree float64, memTotal float64, diskUsage float64, diskFree float64, diskTotal float64, procCount int, err error) {
+	// CPU Usage
+	cpuPercent, err := cpu.Percent(time.Second, false)
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("error obteniendo CPU: %v", err)
+	}
+	if len(cpuPercent) > 0 {
+		cpuUsage = cpuPercent[0]
+	}
+
+	// Memory
+	vmStat, err := mem.VirtualMemory()
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("error obteniendo memoria: %v", err)
+	}
+	memUsage = vmStat.UsedPercent
+	memFree = float64(vmStat.Available) / 1024 / 1024 // MB
+	memTotal = float64(vmStat.Total) / 1024 / 1024    // MB
+
+	// Disk
+	diskStat, err := disk.Usage("/")
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("error obteniendo disco: %v", err)
+	}
+	diskUsage = diskStat.UsedPercent
+	diskFree = float64(diskStat.Free) / 1024 / 1024 / 1024   // GB
+	diskTotal = float64(diskStat.Total) / 1024 / 1024 / 1024 // GB
+
+	// Process Count
+	processes, err := process.Processes()
+	if err != nil {
+		return cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, 0, fmt.Errorf("error obteniendo procesos: %v", err)
+	}
+	procCount = len(processes)
+
+	return cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, procCount, nil
 }
 
 func ExecuteCommand(comando string) string {
@@ -29,8 +73,28 @@ func ExecuteCommand(comando string) string {
 
 	// Manejar reportes del cliente
 	if strings.HasPrefix(comando, "__REPORTE__:") {
-		fmt.Println(comando) // Imprimir el reporte en el servidor
-		return "\n"          // Retorna solo un salto de línea para reportes
+		fmt.Println(comando) // Imprimir el reporte del cliente
+
+		// Generar reporte del servidor
+		cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, procCount, err := getSystemInfo()
+		if err != nil {
+			fmt.Printf("Error obteniendo información del sistema: %v\n", err)
+		}
+
+		serverReport := fmt.Sprintf("[DEBIAN] Recursos del Sistema:\n"+
+			"- CPU: %.2f%%\n"+
+			"- Memoria: %.2f%% (%.2f MB libre de %.2f MB)\n"+
+			"- Disco: %.2f%% (%.2f GB libre de %.2f GB)\n"+
+			"- Procesos Activos: %d\n"+
+			"- Hora: %s\n",
+			cpuUsage,
+			memUsage, memFree, memTotal,
+			diskUsage, diskFree, diskTotal,
+			procCount,
+			time.Now().Format("2006-01-02 15:04:05"))
+
+		fmt.Print(serverReport)
+		return "\n"
 	}
 
 	// Manejar comando de sincronización
