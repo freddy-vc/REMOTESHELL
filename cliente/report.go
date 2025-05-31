@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"runtime"
@@ -32,13 +33,30 @@ func StartReport(conn net.Conn, periodo int) {
 		// Adquirir el mutex antes de enviar el reporte
 		ResponseMutex.Lock()
 		_, err := conn.Write([]byte(reporte))
-		// Liberar el mutex después de enviar el reporte
-		ResponseMutex.Unlock()
-
 		if err != nil {
+			ResponseMutex.Unlock()
 			fmt.Println("Error al enviar el reporte:", err)
 			return
 		}
+
+		// Enviar comando de sincronización después del reporte
+		_, err = conn.Write([]byte("__SYNC__\n"))
+		// Liberar el mutex después de enviar el comando de sincronización
+		ResponseMutex.Unlock()
+
+		if err != nil {
+			fmt.Println("Error al enviar comando de sincronización:", err)
+			return
+		}
+
+		// Esperar la respuesta del comando de sincronización sin mostrarla
+		reader := bufio.NewReader(conn)
+		_, err = reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error al leer respuesta de sincronización:", err)
+			return
+		}
+
 		time.Sleep(time.Duration(periodo) * time.Second)
 	}
 }

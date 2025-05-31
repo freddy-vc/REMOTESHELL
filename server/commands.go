@@ -33,6 +33,11 @@ func ExecuteCommand(comando string) string {
 		return "Reporte recibido\n"
 	}
 
+	// Manejar comando de sincronización
+	if comando == "__SYNC__" {
+		return "OK\n"
+	}
+
 	fmt.Printf("Ejecutando comando UNIX: %s\n", comando)
 
 	// Manejar el comando cd de forma especial
