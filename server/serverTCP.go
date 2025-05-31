@@ -105,12 +105,14 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 func procesarComandoConcurrente(cmd CommandRequest) {
 	defer close(cmd.Response)
 
+	// Si es un reporte, solo procesarlo como reporte
 	if strings.HasPrefix(cmd.Command, "REPORTE:") {
-		fmt.Printf("Reporte recibido de %s\n", cmd.User)
+		fmt.Printf("Reporte recibido de %s: %s\n", cmd.User, cmd.Command)
 		cmd.Response <- "Reporte recibido\n"
 		return
 	}
 
+	// Si no es un reporte, ejecutar como comando
 	commandMutex.Lock()
 	respuesta := ExecuteCommand(cmd.Command)
 	commandMutex.Unlock()
@@ -297,6 +299,13 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 			}
 
 			comando = strings.TrimSpace(comando)
+
+			// Si el comando está vacío, ignorarlo
+			if comando == "" {
+				continue
+			}
+
+			// Crear el request para el comando
 			cmdReq := CommandRequest{
 				Command:  comando,
 				User:     usuario,
@@ -304,12 +313,17 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 				Response: make(chan string, 1),
 			}
 
-			// Procesar comando concurrentemente
-			go procesarComandoConcurrente(cmdReq)
+			// Procesar el comando y esperar la respuesta
+			procesarComandoConcurrente(cmdReq)
 
-			// Esperar respuesta y enviarla al cliente
+			// Leer la respuesta del canal
 			if respuesta, ok := <-cmdReq.Response; ok {
-				respChan <- respuesta
+				// Enviar la respuesta inmediatamente al cliente
+				_, err := socket.Write([]byte(respuesta))
+				if err != nil {
+					fmt.Printf("Error al enviar respuesta a %s: %v\n", socket.RemoteAddr(), err)
+					return
+				}
 			}
 		}
 	}
