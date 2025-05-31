@@ -138,6 +138,14 @@ func obtenerIPLocal() (string, error) {
 func autenticarConServidor(socket net.Conn) error {
 	reader := bufio.NewReader(os.Stdin)
 
+	// Leer el número de intentos restantes
+	respuesta := make([]byte, 1024)
+	n, err := socket.Read(respuesta)
+	if err != nil {
+		return fmt.Errorf("error al leer respuesta inicial: %v", err)
+	}
+	fmt.Printf("Intentos restantes: %s", string(respuesta[:n]))
+
 	// Solicitar usuario
 	fmt.Print("Ingrese su nombre de usuario: ")
 	usuario, err := reader.ReadString('\n')
@@ -171,8 +179,8 @@ func autenticarConServidor(socket net.Conn) error {
 	defer socket.SetReadDeadline(time.Time{}) // Restaurar el timeout por defecto
 
 	// Leer respuesta del servidor
-	respuesta := make([]byte, 1024)
-	n, err := socket.Read(respuesta)
+	respuesta = make([]byte, 1024)
+	n, err = socket.Read(respuesta)
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			return fmt.Errorf("timeout esperando respuesta del servidor")
@@ -181,15 +189,23 @@ func autenticarConServidor(socket net.Conn) error {
 	}
 
 	respuestaStr := strings.TrimSpace(string(respuesta[:n]))
-	fmt.Printf("Respuesta del servidor: '%s'\n", respuestaStr)
 
-	switch respuestaStr {
-	case "AUTH_OK":
+	// Manejar diferentes tipos de respuestas
+	switch {
+	case respuestaStr == "AUTH_OK":
+		fmt.Println("Autenticación exitosa")
 		return nil
-	case "AUTH_ERROR":
+	case respuestaStr == "AUTH_ERROR":
 		return fmt.Errorf("usuario o contraseña incorrectos")
-	case "IP_ERROR":
+	case respuestaStr == "IP_ERROR":
 		return fmt.Errorf("IP no permitida")
+	case respuestaStr == "MAX_INTENTOS":
+		return fmt.Errorf("máximo de intentos alcanzado")
+	case strings.HasPrefix(respuestaStr, "AUTH_ERROR:"):
+		return fmt.Errorf(strings.TrimPrefix(respuestaStr, "AUTH_ERROR:"))
+	case strings.HasPrefix(respuestaStr, "INTENTOS_RESTANTES:"):
+		// Ignorar este mensaje y continuar con la autenticación
+		return nil
 	default:
 		return fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
 	}

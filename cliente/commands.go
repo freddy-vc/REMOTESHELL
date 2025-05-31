@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -37,7 +38,7 @@ func ExecuteRemoteCommand(conn net.Conn) {
 			continue
 		}
 
-		// Esperar y leer la respuesta completa del servidor
+		// Esperar y leer la respuesta del servidor
 		respuesta, err := leerRespuestaCompleta(conn)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -49,22 +50,38 @@ func ExecuteRemoteCommand(conn net.Conn) {
 		}
 
 		// Mostrar la respuesta
-		fmt.Print(respuesta)
+		if respuesta != "" {
+			if strings.HasPrefix(comando, "cd ") {
+				fmt.Print(respuesta)
+			} else {
+				// Para otros comandos, asegurar que la salida sea visible
+				fmt.Print(respuesta)
+				if !strings.HasSuffix(respuesta, "\n") {
+					fmt.Println()
+				}
+			}
+		}
 	}
 }
 
 // leerRespuestaCompleta lee la respuesta completa del servidor
 func leerRespuestaCompleta(conn net.Conn) (string, error) {
+	// Establecer un timeout razonable
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	defer conn.SetReadDeadline(time.Time{}) // Restaurar el timeout por defecto
 
 	reader := bufio.NewReader(conn)
 	var respuestaCompleta strings.Builder
+	buffer := make([]byte, 4096)
 
 	for {
-		buffer := make([]byte, 4096)
 		n, err := reader.Read(buffer)
 		if err != nil {
-			if err.Error() == "EOF" {
+			if err == io.EOF {
+				break
+			}
+			// Si ya tenemos datos y es un timeout, consideramos que tenemos la respuesta completa
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() && respuestaCompleta.Len() > 0 {
 				break
 			}
 			return "", err
@@ -72,8 +89,8 @@ func leerRespuestaCompleta(conn net.Conn) (string, error) {
 
 		respuestaCompleta.Write(buffer[:n])
 
-		// Si hay más datos disponibles, continuar leyendo
-		if n < 4096 {
+		// Si recibimos menos datos que el tamaño del buffer, probablemente es el final
+		if n < len(buffer) {
 			break
 		}
 	}
@@ -84,8 +101,8 @@ func leerRespuestaCompleta(conn net.Conn) (string, error) {
 // StartCommandShell inicia el shell de comandos remoto
 func StartCommandShell(conn net.Conn) {
 	fmt.Println("*******************************************")
-	fmt.Println("*       SHELL REMOTO - CLIENTE            *")
-	fmt.Println("*      Escriba 'bye' para salir           *")
+	fmt.Println("*       SHELL REMOTO - CLIENTE          *")
+	fmt.Println("*      Escriba 'bye' para salir         *")
 	fmt.Println("*******************************************")
 
 	ExecuteRemoteCommand(conn)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -11,19 +12,31 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // 192.168.137.102
 var (
-	commandMutex  sync.Mutex
-	activeClients sync.WaitGroup
-	clientCount   int32
+	commandMutex   sync.Mutex
+	activeClients  sync.WaitGroup
+	clientCount    int32
+	shutdownServer = make(chan struct{})
+	clientChannels = make(map[net.Conn]chan string)
+	channelsMutex  sync.RWMutex
 )
+
+// Estructura para manejar comandos concurrentemente
+type CommandRequest struct {
+	Command  string
+	User     string
+	Address  string
+	Response chan string
+}
 
 func usuarioPermitido(usuario string, config *Config) bool {
 	usuarios := strings.Split(config.Usuarios, ",")
 	for _, u := range usuarios {
-		if strings.TrimSpace(u) == usuario {
+		if strings.TrimSpace(u) == strings.TrimSpace(usuario) {
 			return true
 		}
 	}
@@ -38,26 +51,26 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 	}
 	usuario = strings.TrimSpace(usuario)
 
-	// Verificar si el usuario está en la lista de usuarios permitidos
+	// Primero verificar si el usuario está en la lista de permitidos en config.conf
 	if !usuarioPermitido(usuario, config) {
-		fmt.Printf("Usuario '%s' no está en la lista de usuarios permitidos\n", usuario)
-		return "", fmt.Errorf("usuario no autorizado")
+		fmt.Printf("Usuario '%s' no está en la lista de usuarios permitidos de config.conf\n", usuario)
+		return "", fmt.Errorf("usuario no autorizado en config.conf")
 	}
 
-	// Leer contraseña
+	// Si el usuario está permitido, verificar la contraseña
 	password, err := reader.ReadString('\n')
 	if err != nil {
 		return "", fmt.Errorf("error al leer contraseña: %v", err)
 	}
 	password = strings.TrimSpace(password)
 
-	fmt.Printf("Intento de autenticación del usuario: '%s'\n", usuario)
+	fmt.Printf("Verificando credenciales para usuario: '%s'\n", usuario)
 
 	// Calcular hash SHA256 de la contraseña
 	hash := sha256.Sum256([]byte(password))
 	hashStr := hex.EncodeToString(hash[:])
 
-	// Leer archivo de usuarios y contraseñas
+	// Verificar en users.db
 	file, err := os.Open("users.db")
 	if err != nil {
 		return "", fmt.Errorf("error al abrir base de datos de usuarios: %v", err)
@@ -85,36 +98,81 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 		return "", fmt.Errorf("error al leer base de datos de usuarios: %v", err)
 	}
 
-	fmt.Printf("Usuario '%s' no autorizado\n", usuario)
-	return "", fmt.Errorf("usuario o contraseña incorrectos")
+	fmt.Printf("Contraseña incorrecta para usuario '%s'\n", usuario)
+	return "", fmt.Errorf("contraseña incorrecta")
 }
 
-func procesarComando(comando string, usuario string, addr string) string {
-	comando = strings.TrimSpace(comando)
-	fmt.Printf("Comando recibido de %s (%s): %s\n", usuario, addr, comando)
+func procesarComandoConcurrente(cmd CommandRequest) {
+	defer close(cmd.Response)
 
-	// Si es un reporte, procesarlo inmediatamente
-	if strings.HasPrefix(comando, "REPORTE:") {
-		fmt.Printf("Reporte recibido de %s\n", usuario)
-		return "Reporte recibido\n"
+	if strings.HasPrefix(cmd.Command, "REPORTE:") {
+		fmt.Printf("Reporte recibido de %s\n", cmd.User)
+		cmd.Response <- "Reporte recibido\n"
+		return
 	}
 
-	// Ejecutar el comando de manera sincronizada
 	commandMutex.Lock()
-	respuesta := ExecuteCommand(comando)
+	respuesta := ExecuteCommand(cmd.Command)
 	commandMutex.Unlock()
 
-	return respuesta
+	cmd.Response <- respuesta
 }
 
-func manejarCliente(socket net.Conn, config *Config) {
+func manejadorComandos(ctx context.Context) {
+	commandQueue := make(chan CommandRequest, 100)
+	const maxWorkers = 5
+	var wg sync.WaitGroup
+
+	// Iniciar workers para procesar comandos
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case cmd, ok := <-commandQueue:
+					if !ok {
+						return
+					}
+					procesarComandoConcurrente(cmd)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	// Esperar señal de apagado
+	<-ctx.Done()
+	close(commandQueue)
+	wg.Wait()
+}
+
+func enviarRespuestasCliente(conn net.Conn, respChan chan string) {
+	for respuesta := range respChan {
+		_, err := conn.Write([]byte(respuesta))
+		if err != nil {
+			fmt.Printf("Error al enviar respuesta a %s: %v\n", conn.RemoteAddr(), err)
+			return
+		}
+	}
+}
+
+func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 	defer func() {
 		socket.Close()
 		activeClients.Done()
 		if atomic.AddInt32(&clientCount, -1) == 0 {
-			fmt.Println("No hay clientes conectados. Cerrando servidor...")
-			os.Exit(0)
+			close(shutdownServer)
 		}
+
+		// Limpiar el canal del cliente
+		channelsMutex.Lock()
+		if ch, exists := clientChannels[socket]; exists {
+			close(ch)
+			delete(clientChannels, socket)
+		}
+		channelsMutex.Unlock()
 	}()
 
 	// Verificar que la IP del cliente está permitida
@@ -128,49 +186,136 @@ func manejarCliente(socket net.Conn, config *Config) {
 	fmt.Printf("Cliente con IP permitida conectado: %s\n", clienteIP)
 	reader := bufio.NewReader(socket)
 
-	// Autenticar usuario
-	usuario, err := autenticarUsuario(reader, config)
-	if err != nil {
-		fmt.Printf("Error de autenticación para cliente %s: %v\n", socket.RemoteAddr(), err)
-		socket.Write([]byte("AUTH_ERROR\n"))
-		return
-	}
+	// Crear canal para respuestas del cliente
+	respChan := make(chan string, 10)
+	channelsMutex.Lock()
+	clientChannels[socket] = respChan
+	channelsMutex.Unlock()
 
-	// Enviar confirmación de autenticación exitosa
-	_, err = socket.Write([]byte("AUTH_OK\n"))
-	if err != nil {
-		fmt.Printf("Error al enviar confirmación de autenticación: %v\n", err)
-		return
+	// Iniciar goroutine para enviar respuestas
+	go enviarRespuestasCliente(socket, respChan)
+
+	// Control de intentos de autenticación
+	intentosRestantes := config.IntentosFallidos
+	var usuario string
+	var err error
+
+	for intentosRestantes > 0 {
+		// Enviar intentos restantes
+		socket.Write([]byte(fmt.Sprintf("INTENTOS_RESTANTES:%d\n", intentosRestantes)))
+
+		// Leer usuario
+		usuario, err = reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("Error al leer usuario: %v\n", err)
+			return
+		}
+		usuario = strings.TrimSpace(usuario)
+
+		// Leer contraseña
+		password, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("Error al leer contraseña: %v\n", err)
+			return
+		}
+		password = strings.TrimSpace(password)
+
+		// Verificar si el usuario está en la lista de permitidos
+		if !usuarioPermitido(usuario, config) {
+			intentosRestantes--
+			fmt.Printf("Usuario '%s' no está en la lista de permitidos. Intentos restantes: %d\n", usuario, intentosRestantes)
+			socket.Write([]byte(fmt.Sprintf("AUTH_ERROR:Usuario no autorizado\n")))
+			continue
+		}
+
+		// Verificar contraseña
+		hash := sha256.Sum256([]byte(password))
+		hashStr := hex.EncodeToString(hash[:])
+
+		// Verificar en users.db
+		autenticado := false
+		file, err := os.Open("users.db")
+		if err != nil {
+			fmt.Printf("Error al abrir base de datos de usuarios: %v\n", err)
+			socket.Write([]byte("AUTH_ERROR:Error interno del servidor\n"))
+			return
+		}
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			userFile := strings.TrimSpace(parts[0])
+			passFile := strings.TrimSpace(parts[1])
+
+			if usuario == userFile && hashStr == passFile {
+				autenticado = true
+				break
+			}
+		}
+		file.Close()
+
+		if autenticado {
+			socket.Write([]byte("AUTH_OK\n"))
+			break
+		}
+
+		intentosRestantes--
+		if intentosRestantes > 0 {
+			fmt.Printf("Autenticación fallida para '%s'. Intentos restantes: %d\n", usuario, intentosRestantes)
+			socket.Write([]byte("AUTH_ERROR:Contraseña incorrecta\n"))
+		} else {
+			fmt.Printf("Máximo de intentos alcanzado para '%s'\n", usuario)
+			socket.Write([]byte("MAX_INTENTOS\n"))
+			return
+		}
 	}
 
 	fmt.Printf("Usuario %s autenticado desde %s\n", usuario, socket.RemoteAddr())
 
+	// Procesar comandos del cliente
 	for {
-		// Leer comando del cliente
-		comando, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				fmt.Printf("Cliente %s desconectado\n", socket.RemoteAddr())
-			} else {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			socket.SetReadDeadline(time.Now().Add(1 * time.Second))
+			comando, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					fmt.Printf("Cliente %s desconectado\n", socket.RemoteAddr())
+					return
+				}
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
 				fmt.Printf("Error al leer comando: %v\n", err)
+				return
 			}
-			return
-		}
 
-		comando = strings.TrimSpace(comando)
-		respuesta := procesarComando(comando, usuario, socket.RemoteAddr().String())
+			comando = strings.TrimSpace(comando)
+			cmdReq := CommandRequest{
+				Command:  comando,
+				User:     usuario,
+				Address:  socket.RemoteAddr().String(),
+				Response: make(chan string, 1),
+			}
 
-		// Enviar respuesta al cliente
-		_, err = socket.Write([]byte(respuesta))
-		if err != nil {
-			fmt.Printf("Error al enviar respuesta a %s: %v\n", socket.RemoteAddr(), err)
-			return
+			// Procesar comando concurrentemente
+			go procesarComandoConcurrente(cmdReq)
+
+			// Esperar respuesta y enviarla al cliente
+			if respuesta, ok := <-cmdReq.Response; ok {
+				respChan <- respuesta
+			}
 		}
 	}
 }
 
 func iniciarServidor() {
-	// Leer configuración
 	config, err := LeerConfig("config.conf")
 	if err != nil {
 		fmt.Printf("Error al leer configuración: %v\n", err)
@@ -181,22 +326,46 @@ func iniciarServidor() {
 	fmt.Println("*    SERVIDOR proy. oper 2025      *")
 	fmt.Println("************************************")
 
+	// Crear contexto para manejo de apagado
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Iniciar manejador de comandos
+	go manejadorComandos(ctx)
+
 	// Usar el puerto de la configuración
-	socketInicial, _ := net.Listen("tcp", ":"+config.Puerto)
+	socketInicial, err := net.Listen("tcp", ":"+config.Puerto)
+	if err != nil {
+		fmt.Printf("Error al crear socket: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Println("Socket creado - OK en puerto", config.Puerto)
 	fmt.Println("Esperando Conexiones...")
 	defer socketInicial.Close()
 
+	// Canal para señales de apagado
+	go func() {
+		<-shutdownServer
+		fmt.Println("Iniciando apagado del servidor...")
+		cancel()
+		socketInicial.Close()
+	}()
+
 	for {
 		socket, err := socketInicial.Accept()
 		if err != nil {
-			fmt.Println("Error al aceptar conexión:", err)
-			continue
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				fmt.Println("Error al aceptar conexión:", err)
+				continue
+			}
 		}
 
 		fmt.Printf("Cliente conectado desde: %s\n", socket.RemoteAddr())
 		activeClients.Add(1)
 		atomic.AddInt32(&clientCount, 1)
-		go manejarCliente(socket, config)
+		go manejarCliente(ctx, socket, config)
 	}
 }

@@ -50,7 +50,7 @@ func ExecuteCommand(comando string) string {
 	// Determinar el shell a usar según el sistema operativo
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		// En Windows, usar cmd.exe con /c para ejecutar el comando
+		// En Windows, usar cmd.exe con /c para ejecutar el comando y redirigir la salida
 		cmd = exec.Command("cmd.exe", "/c", comando)
 	} else {
 		// En sistemas Unix, usar /bin/sh
@@ -60,26 +60,35 @@ func ExecuteCommand(comando string) string {
 	// Establecer el directorio de trabajo
 	cmd.Dir = currentDir
 
-	// Capturar tanto la salida estándar como los errores
-	output, err := cmd.CombinedOutput()
+	// Configurar la salida para que use los pipes correctos
+	cmd.Stderr = cmd.Stdout
+
+	// Capturar la salida
+	output, err := cmd.Output()
 	resultado := string(output)
+
+	// Si no hay salida pero el comando se ejecutó correctamente
+	if len(resultado) == 0 && err == nil {
+		// Para comandos como 'cls' o 'clear' que no producen salida
+		if comando == "cls" || comando == "clear" {
+			return "\n"
+		}
+		return fmt.Sprintf("Comando '%s' ejecutado correctamente\n", comando)
+	}
+
+	// Si hay error pero hay salida, mostrar la salida
+	if err != nil && len(resultado) > 0 {
+		return resultado
+	}
+
+	// Si hay error y no hay salida, mostrar el error
+	if err != nil {
+		return fmt.Sprintf("Error al ejecutar comando: %v\n", err)
+	}
 
 	// Asegurarse de que la salida termine con un salto de línea
 	if !strings.HasSuffix(resultado, "\n") {
 		resultado += "\n"
-	}
-
-	// Si hay error pero también hay salida, mostrar la salida
-	if err != nil {
-		if resultado != "" {
-			return resultado
-		}
-		return fmt.Sprintf("Error al ejecutar comando: %v\n", err)
-	}
-
-	// Si no hay salida, enviar mensaje de confirmación
-	if strings.TrimSpace(resultado) == "" {
-		return fmt.Sprintf("Comando '%s' ejecutado correctamente\n", comando)
 	}
 
 	return resultado
