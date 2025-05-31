@@ -50,8 +50,9 @@ func ExecuteCommand(comando string) string {
 	// Determinar el shell a usar según el sistema operativo
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		// En Windows, usar cmd.exe con /c para ejecutar el comando y redirigir la salida
-		cmd = exec.Command("cmd.exe", "/c", comando)
+		// En Windows, usar la ruta completa a cmd.exe
+		cmdPath := "C:\\Windows\\System32\\cmd.exe"
+		cmd = exec.Command(cmdPath, "/c", comando)
 	} else {
 		// En sistemas Unix, usar /bin/sh
 		cmd = exec.Command("/bin/sh", "-c", comando)
@@ -83,6 +84,17 @@ func ExecuteCommand(comando string) string {
 
 	// Si hay error y no hay salida, mostrar el error
 	if err != nil {
+		// Verificar si el error es por cmd.exe no encontrado
+		if strings.Contains(err.Error(), "executable file not found") {
+			// Intentar con PowerShell como alternativa
+			psCmd := exec.Command("powershell.exe", "-Command", comando)
+			psCmd.Dir = currentDir
+			psOutput, psErr := psCmd.Output()
+			if psErr == nil {
+				return string(psOutput)
+			}
+			return fmt.Sprintf("Error al ejecutar comando (tanto en cmd como en PowerShell): %v\n", err)
+		}
 		return fmt.Sprintf("Error al ejecutar comando: %v\n", err)
 	}
 
