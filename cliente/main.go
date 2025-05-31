@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -30,9 +31,40 @@ func LeerConfigIntentos1(ruta string) (int, string, error) {
 	return intentos, ipPermitida, nil
 }
 
+func validarParametros() (string, string, int, error) {
+	if len(os.Args) != 4 {
+		return "", "", 0, fmt.Errorf("Uso: %s <DireccionIP> <Puerto> <TiempoReporte>\nEjemplo: %s 192.168.1.100 1625 5", os.Args[0], os.Args[0])
+	}
+
+	ip := os.Args[1]
+	puerto := os.Args[2]
+
+	// Validar que la IP tenga un formato válido
+	if net.ParseIP(ip) == nil {
+		return "", "", 0, fmt.Errorf("La dirección IP '%s' no es válida", ip)
+	}
+
+	// Validar que el puerto sea un número válido
+	puertoint, err := strconv.Atoi(puerto)
+	if err != nil || puertoint < 1 || puertoint > 65535 {
+		return "", "", 0, fmt.Errorf("El puerto debe ser un número entre 1 y 65535")
+	}
+
+	// Validar y convertir el tiempo de reporte
+	periodo, err := strconv.Atoi(os.Args[3])
+	if err != nil {
+		return "", "", 0, fmt.Errorf("El tiempo de reporte debe ser un número válido")
+	}
+	if periodo <= 0 {
+		return "", "", 0, fmt.Errorf("El tiempo de reporte debe ser mayor a 0")
+	}
+
+	return ip, puerto, periodo, nil
+}
+
 func main() {
 	intentosMax, ipPermitida, _ := LeerConfigIntentos1("../server/config.conf")
-	
+
 	// Verificar si la IP local coincide con la IP permitida
 	if ipPermitida != "" {
 		ipLocal, err := obtenerIPLocal()
@@ -48,29 +80,29 @@ func main() {
 		}
 	}
 
+	// Obtener y validar parámetros de línea de comandos
+	ip, puerto, periodoReporte, err := validarParametros()
+	if err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
+	}
+
 	intentos := 0
 	conectado := false
 	for intentos = 0; intentos < intentosMax; {
-		// Solicitar parámetros de conexión en cada intento
-		ip, puerto, periodoReporte, err := SolicitarParametros()
-		if err != nil {
-			fmt.Printf("Error al obtener parámetros: %v\n", err)
-			os.Exit(1)
-		}
-
-		conn, err := Conectar(ip, puerto, periodoReporte)
+		conn, username, err := Conectar(ip, puerto, periodoReporte)
 		if err != nil {
 			fmt.Printf("Error al conectar o autenticar con el servidor: %v\n", err)
 			intentos++
 			if intentos < intentosMax {
 				fmt.Printf("Intento %d de %d. Intente nuevamente.\n", intentos+1, intentosMax)
 			}
-			continue // vuelve a pedir los parámetros de conexión
+			continue
 		}
 
 		// Iniciar el envío periódico de reportes en una goroutine
 		go StartReport(conn, periodoReporte)
-		StartCommandShell(conn)
+		StartCommandShell(conn, username)
 		conectado = true
 		break // sale del bucle principal si la conexión y autenticación fueron exitosas
 	}
@@ -79,45 +111,4 @@ func main() {
 		fmt.Println("Se alcanzó el número máximo de intentos fallidos de conexión.")
 		os.Exit(1)
 	}
-}
-
-func SolicitarParametros() (string, string, int, error) {
-	reader := bufio.NewReader(os.Stdin)
-
-	// Solicitar IP
-	fmt.Print("Ingrese la IP del servidor: ")
-	ip, err := reader.ReadString('\n')
-	if err != nil {
-		return "", "", 0, err
-	}
-	ip = strings.TrimSpace(ip)
-
-	// Solicitar Puerto
-	fmt.Print("Ingrese el puerto del servidor: ")
-	puerto, err := reader.ReadString('\n')
-	if err != nil {
-		return "", "", 0, err
-	}
-	puerto = strings.TrimSpace(puerto)
-
-	// Solicitar Periodo de Reporte
-	fmt.Print("Ingrese el periodo de reporte en segundos: ")
-	periodoStr, err := reader.ReadString('\n')
-	if err != nil {
-		return "", "", 0, err
-	}
-	periodoStr = strings.TrimSpace(periodoStr)
-
-	// Convertir periodo a entero
-	periodo, err := strconv.Atoi(periodoStr)
-	if err != nil {
-		return "", "", 0, fmt.Errorf("el periodo debe ser un número válido")
-	}
-
-	// Validar parámetros
-	if ip == "" || puerto == "" || periodo <= 0 {
-		return "", "", 0, fmt.Errorf("todos los parámetros son obligatorios y el periodo debe ser mayor a 0")
-	}
-
-	return ip, puerto, periodo, nil
 }

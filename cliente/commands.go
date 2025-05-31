@@ -11,11 +11,11 @@ import (
 )
 
 // ExecuteRemoteCommand envía un comando al servidor remoto y muestra la respuesta
-func ExecuteRemoteCommand(conn net.Conn) {
+func ExecuteRemoteCommand(conn net.Conn, username string) {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		fmt.Print("shell> ")
+		fmt.Printf("%s> ", username)
 		comando, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error al leer el comando:", err)
@@ -107,11 +107,12 @@ func leerRespuestaCompleta(conn net.Conn) (string, error) {
 }
 
 // StartCommandShell inicia el shell de comandos remoto
-func StartCommandShell(conn net.Conn) {
+func StartCommandShell(conn net.Conn, username string) {
 	fmt.Println("*******************************************")
 	fmt.Println("*       SHELL REMOTO - CLIENTE          *")
+	fmt.Printf("*       Usuario: %-24s*\n", username)
 	fmt.Println("*      Escriba 'bye' para salir         *")
 	fmt.Println("*******************************************")
 
-	ExecuteRemoteCommand(conn)
+	ExecuteRemoteCommand(conn, username)
 }
