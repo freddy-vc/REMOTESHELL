@@ -37,11 +37,8 @@ func ExecuteRemoteCommand(conn net.Conn) {
 			continue
 		}
 
-		// Recibir la respuesta del servidor
-		// En la parte donde se lee la respuesta
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second)) // Timeout de 5 segundos
-		buffer := make([]byte, 4096)
-		n, err := conn.Read(buffer)
+		// Esperar y leer la respuesta completa del servidor
+		respuesta, err := leerRespuestaCompleta(conn)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				fmt.Println("Tiempo de espera agotado. El comando puede haberse ejecutado correctamente.")
@@ -52,8 +49,36 @@ func ExecuteRemoteCommand(conn net.Conn) {
 		}
 
 		// Mostrar la respuesta
-		fmt.Println(string(buffer[:n]))
+		fmt.Print(respuesta)
 	}
+}
+
+// leerRespuestaCompleta lee la respuesta completa del servidor
+func leerRespuestaCompleta(conn net.Conn) (string, error) {
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+	reader := bufio.NewReader(conn)
+	var respuestaCompleta strings.Builder
+
+	for {
+		buffer := make([]byte, 4096)
+		n, err := reader.Read(buffer)
+		if err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			return "", err
+		}
+
+		respuestaCompleta.Write(buffer[:n])
+
+		// Si hay más datos disponibles, continuar leyendo
+		if n < 4096 {
+			break
+		}
+	}
+
+	return respuestaCompleta.String(), nil
 }
 
 // StartCommandShell inicia el shell de comandos remoto

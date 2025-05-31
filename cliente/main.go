@@ -8,27 +8,46 @@ import (
 	"strings"
 )
 
-func LeerConfigIntentos1(ruta string) (int, error) {
+func LeerConfigIntentos1(ruta string) (int, string, error) {
 	file, err := os.Open(ruta)
 	if err != nil {
-		return 3, nil // Valor por defecto si no se encuentra el archivo
+		return 3, "", nil // Valor por defecto si no se encuentra el archivo
 	}
 	defer file.Close()
+
+	var intentos int = 3 // Valor por defecto
+	var ipPermitida string = ""
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "INTENTOS_MAX=") {
-			var intentos int
 			fmt.Sscanf(line, "INTENTOS_MAX=%d", &intentos)
-			return intentos, nil
+		} else if strings.HasPrefix(line, "IP_CLIENTE=") {
+			ipPermitida = strings.TrimPrefix(line, "IP_CLIENTE=")
 		}
 	}
-	return 3, nil // Valor por defecto si no se encuentra la clave
+	return intentos, ipPermitida, nil
 }
 
 func main() {
-	intentosMax, _ := LeerConfigIntentos1("../server/config.conf")
+	intentosMax, ipPermitida, _ := LeerConfigIntentos1("../server/config.conf")
+	
+	// Verificar si la IP local coincide con la IP permitida
+	if ipPermitida != "" {
+		ipLocal, err := obtenerIPLocal()
+		if err != nil {
+			fmt.Printf("Error al obtener IP local: %v\n", err)
+		} else {
+			fmt.Printf("IP local: %s, IP permitida: %s\n", ipLocal, ipPermitida)
+			if ipLocal != ipPermitida {
+				fmt.Printf("Error: La IP local (%s) no coincide con la IP permitida (%s)\n", ipLocal, ipPermitida)
+				fmt.Println("Terminando el programa por seguridad...")
+				os.Exit(1)
+			}
+		}
+	}
+
 	intentos := 0
 	conectado := false
 	for intentos = 0; intentos < intentosMax; {
