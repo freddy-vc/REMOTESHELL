@@ -8,10 +8,11 @@ import (
 )
 
 type Config struct {
-	IPPermitida      string
-	Puerto           string
-	IntentosFallidos int
+	IPPermitida        string
+	Puerto             string
+	IntentosFallidos   int
 	UsuariosPermitidos []string
+	Usuarios           string
 }
 
 // Lee el archivo de configuración y retorna una estructura Config
@@ -44,10 +45,7 @@ func LeerConfig(ruta string) (*Config, error) {
 			config.IntentosFallidos = 3 // valor por defecto
 			fmt.Sscanf(value, "%d", &config.IntentosFallidos)
 		case "USUARIOS":
-			config.UsuariosPermitidos = strings.Split(value, ",")
-			for i := range config.UsuariosPermitidos {
-				config.UsuariosPermitidos[i] = strings.TrimSpace(config.UsuariosPermitidos[i])
-			}
+			config.Usuarios = value
 		}
 	}
 	if err := scanner.Err(); err != nil {

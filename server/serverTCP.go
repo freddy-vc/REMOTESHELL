@@ -20,6 +20,16 @@ var (
 	clientCount   int32
 )
 
+func usuarioPermitido(usuario string, config *Config) bool {
+	usuarios := strings.Split(config.Usuarios, ",")
+	for _, u := range usuarios {
+		if strings.TrimSpace(u) == usuario {
+			return true
+		}
+	}
+	return false
+}
+
 func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 	// Leer usuario
 	usuario, err := reader.ReadString('\n')
@@ -27,6 +37,12 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 		return "", fmt.Errorf("error al leer usuario: %v", err)
 	}
 	usuario = strings.TrimSpace(usuario)
+
+	// Verificar si el usuario está en la lista de usuarios permitidos
+	if !usuarioPermitido(usuario, config) {
+		fmt.Printf("Usuario '%s' no está en la lista de usuarios permitidos\n", usuario)
+		return "", fmt.Errorf("usuario no autorizado")
+	}
 
 	// Leer contraseña
 	password, err := reader.ReadString('\n')
@@ -77,9 +93,9 @@ func procesarComando(comando string, usuario string, addr string) string {
 	comando = strings.TrimSpace(comando)
 	fmt.Printf("Comando recibido de %s (%s): %s\n", usuario, addr, comando)
 
-	// Si es un reporte, solo mostrarlo y no ejecutar como comando
-	if strings.HasPrefix(comando, "__REPORTE__:") {
-		fmt.Printf("Reporte recibido de %s: %s\n", usuario, comando)
+	// Si es un reporte, procesarlo inmediatamente
+	if strings.HasPrefix(comando, "REPORTE:") {
+		fmt.Printf("Reporte recibido de %s\n", usuario)
 		return "Reporte recibido\n"
 	}
 
@@ -129,12 +145,9 @@ func manejarCliente(socket net.Conn, config *Config) {
 
 	fmt.Printf("Usuario %s autenticado desde %s\n", usuario, socket.RemoteAddr())
 
-	// Buffer para leer comandos
-	cmdBuffer := make([]byte, 4096)
-
 	for {
 		// Leer comando del cliente
-		n, err := reader.Read(cmdBuffer)
+		comando, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
 				fmt.Printf("Cliente %s desconectado\n", socket.RemoteAddr())
@@ -144,7 +157,7 @@ func manejarCliente(socket net.Conn, config *Config) {
 			return
 		}
 
-		comando := string(cmdBuffer[:n])
+		comando = strings.TrimSpace(comando)
 		respuesta := procesarComando(comando, usuario, socket.RemoteAddr().String())
 
 		// Enviar respuesta al cliente
@@ -186,8 +199,4 @@ func iniciarServidor() {
 		atomic.AddInt32(&clientCount, 1)
 		go manejarCliente(socket, config)
 	}
-}
-
-func main() {
-	iniciarServidor()
 }
