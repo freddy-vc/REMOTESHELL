@@ -4,14 +4,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/shirou/gopsutil/v3/process"
 )
 
 var (
@@ -24,40 +20,61 @@ func init() {
 	currentDir, _ = os.Getwd()
 }
 
+func executeSystemCommand(comando string) (string, error) {
+	cmd := exec.Command("/bin/bash", "-c", comando)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 func getSystemInfo() (cpuUsage float64, memUsage float64, memFree float64, memTotal float64, diskUsage float64, diskFree float64, diskTotal float64, procCount int, err error) {
-	// CPU Usage
-	cpuPercent, err := cpu.Percent(time.Second, false)
+	// CPU Usage usando top
+	cpuCmd := "top -bn1 | grep '%Cpu' | awk '{print $2}'"
+	cpuStr, err := executeSystemCommand(cpuCmd)
 	if err != nil {
 		return 0, 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("error obteniendo CPU: %v", err)
 	}
-	if len(cpuPercent) > 0 {
-		cpuUsage = cpuPercent[0]
-	}
+	cpuUsage, _ = strconv.ParseFloat(cpuStr, 64)
 
-	// Memory
-	vmStat, err := mem.VirtualMemory()
+	// Memoria usando free
+	memCmd := "free -m | grep 'Mem:'"
+	memStr, err := executeSystemCommand(memCmd)
 	if err != nil {
 		return 0, 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("error obteniendo memoria: %v", err)
 	}
-	memUsage = vmStat.UsedPercent
-	memFree = float64(vmStat.Available) / 1024 / 1024 // MB
-	memTotal = float64(vmStat.Total) / 1024 / 1024    // MB
+	memFields := strings.Fields(memStr)
+	if len(memFields) >= 4 {
+		memTotal, _ = strconv.ParseFloat(memFields[1], 64)
+		memFree, _ = strconv.ParseFloat(memFields[3], 64)
+		if memTotal > 0 {
+			memUsage = 100 * (1 - memFree/memTotal)
+		}
+	}
 
-	// Disk
-	diskStat, err := disk.Usage("/")
+	// Disco usando df
+	diskCmd := "df -h / | tail -n 1"
+	diskStr, err := executeSystemCommand(diskCmd)
 	if err != nil {
 		return 0, 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("error obteniendo disco: %v", err)
 	}
-	diskUsage = diskStat.UsedPercent
-	diskFree = float64(diskStat.Free) / 1024 / 1024 / 1024   // GB
-	diskTotal = float64(diskStat.Total) / 1024 / 1024 / 1024 // GB
+	diskFields := strings.Fields(diskStr)
+	if len(diskFields) >= 5 {
+		diskTotal, _ = strconv.ParseFloat(strings.TrimRight(diskFields[1], "G"), 64)
+		diskFree, _ = strconv.ParseFloat(strings.TrimRight(diskFields[3], "G"), 64)
+		diskUsageStr := strings.TrimRight(diskFields[4], "%")
+		diskUsage, _ = strconv.ParseFloat(diskUsageStr, 64)
+	}
 
-	// Process Count
-	processes, err := process.Processes()
+	// Número de procesos usando ps
+	procCmd := "ps aux | wc -l"
+	procStr, err := executeSystemCommand(procCmd)
 	if err != nil {
 		return cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, 0, fmt.Errorf("error obteniendo procesos: %v", err)
 	}
-	procCount = len(processes)
+	procCount64, _ := strconv.ParseInt(procStr, 10, 64)
+	procCount = int(procCount64) - 1 // Restamos 1 por el header de ps
 
 	return cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, procCount, nil
 }
