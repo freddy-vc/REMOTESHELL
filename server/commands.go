@@ -27,6 +27,12 @@ func ExecuteCommand(comando string) string {
 		return "Error: comando vacío\n"
 	}
 
+	// Manejar reportes del cliente
+	if strings.HasPrefix(comando, "__REPORTE__:") {
+		fmt.Println(comando) // Imprimir el reporte en el servidor
+		return "Reporte recibido\n"
+	}
+
 	fmt.Printf("Ejecutando comando UNIX: %s\n", comando)
 
 	// Manejar el comando cd de forma especial
