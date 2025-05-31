@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -36,22 +37,73 @@ func LeerConfigIntentos(ruta string) (int, string, error) {
 	return intentos, ipPermitida, nil
 }
 
-// Función para obtener la IP local del cliente
-func obtenerIPLocal() (string, error) {
-	addrs, err := net.InterfaceAddrs()
+// Función para obtener todas las IPs locales disponibles
+func obtenerIPsLocales() ([]string, error) {
+	var ips []string
+	ifaces, err := net.Interfaces()
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("error al obtener interfaces: %v", err)
 	}
 
-	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String(), nil
+	for _, iface := range ifaces {
+		// Ignorar interfaces inactivas o loopback
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			switch v := addr.(type) {
+			case *net.IPNet:
+				if ip4 := v.IP.To4(); ip4 != nil {
+					ips = append(ips, ip4.String())
+				}
+			case *net.IPAddr:
+				if ip4 := v.IP.To4(); ip4 != nil {
+					ips = append(ips, ip4.String())
+				}
 			}
 		}
 	}
 
-	return "", fmt.Errorf("no se pudo determinar la IP local")
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("no se encontraron IPs locales")
+	}
+	return ips, nil
+}
+
+// Función para obtener la IP local del cliente
+func obtenerIPLocal() (string, error) {
+	// Ejecutar el comando ipconfig
+	cmd := exec.Command("ipconfig")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("error al ejecutar ipconfig: %v", err)
+	}
+
+	// Convertir la salida a string y dividir por líneas
+	lines := strings.Split(string(output), "\n")
+
+	// Buscar la línea que contiene "Dirección IPv4"
+	for _, line := range lines {
+		if strings.Contains(line, "IPv4") {
+			// La IP está en la misma línea después de los puntos
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				ip := strings.TrimSpace(parts[1])
+				// Verificar que es una IP válida
+				if net.ParseIP(ip) != nil {
+					return ip, nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no se encontró la dirección IPv4 en la salida de ipconfig")
 }
 
 func autenticarConServidor(socket net.Conn) error {
@@ -102,7 +154,7 @@ func Conectar(ip string, puerto string, periodoReporte int) (net.Conn, error) {
 			return nil, errIP
 		}
 
-		fmt.Printf("IP local: %s, IP permitida: %s\n", ipLocal, ipPermitida)
+		fmt.Printf("\nIP local seleccionada: %s\nIP permitida: %s\n", ipLocal, ipPermitida)
 		if ipLocal != ipPermitida {
 			fmt.Printf("Error: La IP local (%s) no coincide con la IP permitida (%s)\n", ipLocal, ipPermitida)
 			fmt.Println("Terminando el programa por seguridad...")
