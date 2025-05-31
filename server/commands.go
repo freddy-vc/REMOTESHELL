@@ -62,6 +62,25 @@ func getSystemInfo() (cpuUsage float64, memUsage float64, memFree float64, memTo
 	return cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, procCount, nil
 }
 
+func generateSystemReport() string {
+	cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, procCount, err := getSystemInfo()
+	if err != nil {
+		return fmt.Sprintf("Error generando reporte: %v\n", err)
+	}
+
+	return fmt.Sprintf("[DEBIAN] Recursos del Sistema:\n"+
+		"- CPU: %.2f%%\n"+
+		"- Memoria: %.2f%% (%.2f MB libre de %.2f MB)\n"+
+		"- Disco: %.2f%% (%.2f GB libre de %.2f GB)\n"+
+		"- Procesos Activos: %d\n"+
+		"- Hora: %s\n",
+		cpuUsage,
+		memUsage, memFree, memTotal,
+		diskUsage, diskFree, diskTotal,
+		procCount,
+		time.Now().Format("2006-01-02 15:04:05"))
+}
+
 func ExecuteCommand(comando string) string {
 	cmdMutex.Lock()
 	defer cmdMutex.Unlock()
@@ -71,35 +90,9 @@ func ExecuteCommand(comando string) string {
 		return "\n" // Retorna solo un salto de línea para comandos vacíos
 	}
 
-	// Manejar reportes del cliente
-	if strings.HasPrefix(comando, "__REPORTE__:") {
-		fmt.Println(comando) // Imprimir el reporte del cliente
-
-		// Generar reporte del servidor
-		cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, procCount, err := getSystemInfo()
-		if err != nil {
-			fmt.Printf("Error obteniendo información del sistema: %v\n", err)
-		}
-
-		serverReport := fmt.Sprintf("[DEBIAN] Recursos del Sistema:\n"+
-			"- CPU: %.2f%%\n"+
-			"- Memoria: %.2f%% (%.2f MB libre de %.2f MB)\n"+
-			"- Disco: %.2f%% (%.2f GB libre de %.2f GB)\n"+
-			"- Procesos Activos: %d\n"+
-			"- Hora: %s\n",
-			cpuUsage,
-			memUsage, memFree, memTotal,
-			diskUsage, diskFree, diskTotal,
-			procCount,
-			time.Now().Format("2006-01-02 15:04:05"))
-
-		fmt.Print(serverReport)
-		return "\n"
-	}
-
-	// Manejar comando de sincronización
-	if comando == "__SYNC__" {
-		return "\n" // Retorna solo un salto de línea para sincronización
+	// Manejar solicitud de reporte
+	if comando == "__GET_REPORT__" {
+		return generateSystemReport()
 	}
 
 	fmt.Printf("Ejecutando comando UNIX: %s\n", comando)
