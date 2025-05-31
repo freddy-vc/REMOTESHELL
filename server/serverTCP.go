@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -53,14 +54,14 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 	// Leer usuario
 	usuario, err := reader.ReadString('\n')
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error al leer usuario: %v", err)
 	}
 	usuario = strings.TrimSpace(usuario)
 
 	// Verificar si el usuario está en la lista de usuarios permitidos
 	usuarioPermitido := false
 	for _, u := range config.UsuariosPermitidos {
-		if u == usuario {
+		if strings.TrimSpace(u) == usuario {
 			usuarioPermitido = true
 			break
 		}
@@ -77,7 +78,6 @@ func manejarCliente(socket net.Conn, config *Config) {
 	defer func() {
 		socket.Close()
 		activeClients.Done()
-		// Si no hay más clientes activos, cerrar el servidor
 		if atomic.AddInt32(&clientCount, -1) == 0 {
 			fmt.Println("No hay clientes conectados. Cerrando servidor...")
 			os.Exit(0)
@@ -88,6 +88,7 @@ func manejarCliente(socket net.Conn, config *Config) {
 	clienteIP := strings.Split(socket.RemoteAddr().String(), ":")[0]
 	if clienteIP != config.IPPermitida {
 		fmt.Printf("Conexión rechazada de IP no permitida: %s\n", clienteIP)
+		socket.Write([]byte("IP_ERROR\n"))
 		return
 	}
 
@@ -102,14 +103,24 @@ func manejarCliente(socket net.Conn, config *Config) {
 		return
 	}
 
+	// Enviar confirmación de autenticación exitosa
+	_, err = socket.Write([]byte("AUTH_OK\n"))
+	if err != nil {
+		fmt.Printf("Error al enviar confirmación de autenticación: %v\n", err)
+		return
+	}
+
 	fmt.Printf("Usuario %s autenticado desde %s\n", usuario, socket.RemoteAddr())
-	socket.Write([]byte("AUTH_OK\n"))
 
 	for {
 		// Leer comando del cliente
 		comando, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Printf("Cliente %s desconectado\n", socket.RemoteAddr())
+			if err == io.EOF {
+				fmt.Printf("Cliente %s desconectado\n", socket.RemoteAddr())
+			} else {
+				fmt.Printf("Error al leer comando: %v\n", err)
+			}
 			return
 		}
 

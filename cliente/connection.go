@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -88,22 +89,50 @@ func obtenerIPLocal() (string, error) {
 	// Convertir la salida a string y dividir por líneas
 	lines := strings.Split(string(output), "\n")
 
-	// Buscar la línea que contiene "Dirección IPv4"
+	// Variables para controlar la búsqueda
+	var ipWifi string
+	encontradoWifi := false
+
+	// Buscar la sección de WiFi y su IP
 	for _, line := range lines {
-		if strings.Contains(line, "IPv4") {
-			// La IP está en la misma línea después de los puntos
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				ip := strings.TrimSpace(parts[1])
-				// Verificar que es una IP válida
-				if net.ParseIP(ip) != nil {
-					return ip, nil
+		line = strings.TrimSpace(line)
+
+		// Buscar el adaptador WiFi
+		if strings.Contains(line, "Wi-Fi") {
+			encontradoWifi = true
+			continue
+		}
+
+		// Si estamos en la sección WiFi, buscar la IP
+		if encontradoWifi {
+			// Buscar específicamente la línea que contiene "Dirección IPv4"
+			if strings.Contains(line, "IPv4") {
+				parts := strings.Split(line, ":")
+				if len(parts) >= 2 {
+					ip := strings.TrimSpace(parts[1])
+					// Eliminar cualquier punto extra al final
+					ip = strings.TrimRight(ip, ".")
+					// Verificar que es una IP válida
+					if net.ParseIP(ip) != nil {
+						ipWifi = ip
+					}
 				}
+			}
+
+			// Solo terminar la sección WiFi cuando encontremos el siguiente adaptador
+			// o cuando la IP ya fue encontrada
+			if (strings.Contains(line, "Adaptador") && !strings.Contains(line, "Wi-Fi")) ||
+				(ipWifi != "") {
+				break
 			}
 		}
 	}
 
-	return "", fmt.Errorf("no se encontró la dirección IPv4 en la salida de ipconfig")
+	if ipWifi != "" {
+		return ipWifi, nil
+	}
+
+	return "", fmt.Errorf("no se encontró la dirección IPv4 del adaptador WiFi")
 }
 
 func autenticarConServidor(socket net.Conn) error {
@@ -120,19 +149,32 @@ func autenticarConServidor(socket net.Conn) error {
 		return fmt.Errorf("error al enviar usuario: %v", err)
 	}
 
+	// Configurar un timeout para la respuesta
+	socket.SetReadDeadline(time.Now().Add(5 * time.Second))
+	defer socket.SetReadDeadline(time.Time{}) // Restaurar el timeout por defecto
+
 	// Leer respuesta del servidor
 	respuesta := make([]byte, 1024)
 	n, err := socket.Read(respuesta)
 	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return fmt.Errorf("timeout esperando respuesta del servidor")
+		}
 		return fmt.Errorf("error al leer respuesta de autenticación: %v", err)
 	}
 
-	respuestaStr := string(respuesta[:n])
-	if strings.TrimSpace(respuestaStr) != "AUTH_OK" {
-		return fmt.Errorf("autenticación fallida: %s", respuestaStr)
-	}
+	respuestaStr := strings.TrimSpace(string(respuesta[:n]))
 
-	return nil
+	switch respuestaStr {
+	case "AUTH_OK":
+		return nil
+	case "AUTH_ERROR":
+		return fmt.Errorf("usuario no autorizado")
+	case "IP_ERROR":
+		return fmt.Errorf("IP no permitida")
+	default:
+		return fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
+	}
 }
 
 func Conectar(ip string, puerto string, periodoReporte int) (net.Conn, error) {
