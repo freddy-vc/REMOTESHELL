@@ -238,6 +238,10 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 }
 
 func iniciarServidor() {
+	fmt.Println("*******************************************")
+	fmt.Println("*       SERVIDOR proy. oper 2025         *")
+	fmt.Println("*******************************************")
+
 	// Cargar configuración
 	config, err := LeerConfig("config.conf")
 	if err != nil {
