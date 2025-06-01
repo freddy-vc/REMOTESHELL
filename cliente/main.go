@@ -7,7 +7,6 @@ import (
 )
 
 func main() {
-
 	// Verificar argumentos
 	if len(os.Args) != 4 {
 		fmt.Println("Uso: ./client <IP> <Puerto> <PeriodoReporte>")
@@ -28,11 +27,20 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error al conectar o autenticar con el servidor: %v\n", err)
 		os.Exit(1)
-	} else {
-		// Iniciar el envío periódico de reportes en una goroutine
-		go StartReport(conn, username, periodoReporte)
-
-		// Iniciar la shell de comandos
-		StartCommandShell(conn, username)
 	}
+
+	// Crear un canal para sincronización
+	done := make(chan bool)
+
+	// Iniciar la goroutine para recibir reportes
+	go func() {
+		StartReport(conn, username)
+		done <- true
+	}()
+
+	// Iniciar el manejo de comandos en el hilo principal
+	ExecuteRemoteCommand(conn, username)
+
+	// Esperar a que terminen todas las goroutines
+	<-done
 }

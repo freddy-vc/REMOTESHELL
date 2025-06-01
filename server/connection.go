@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -189,9 +190,21 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 			comando = strings.TrimSpace(comando)
 			if comando == "" {
 				continue
+			} // Verificar si es comando de configuración de periodo de reporte
+			if strings.HasPrefix(comando, "__SET_REPORT_PERIOD__") {
+				periodoStr := strings.TrimPrefix(comando, "__SET_REPORT_PERIOD__")
+				periodo, err := strconv.Atoi(periodoStr)
+				if err != nil {
+					socket.Write([]byte("REPORT_PERIOD_ERROR\n"))
+					continue
+				}
+				// Iniciar el sistema de reportes con el periodo especificado
+				go iniciarSistemaReportes(ctx, socket, usuario, periodo)
+				socket.Write([]byte("REPORT_PERIOD_OK\n"))
+				continue
 			}
 
-			// Procesar el comando
+			// Procesar otros comandos
 			respChan := make(chan string, 1)
 			req := CommandRequest{
 				Command:  comando,
@@ -215,9 +228,9 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 }
 
 func iniciarServidor() {
-	fmt.Println("*******************************************")
-	fmt.Println("*       SERVIDOR proy. oper 2025         *")
-	fmt.Println("*******************************************")
+	fmt.Println("[x]----------|||---------[x]")
+	fmt.Println("|   REMOTESHELL - SERVER   |")
+	fmt.Println("[x]----------|||---------[x]")
 
 	// Cargar configuración
 	config, err := LeerConfig("config.conf")
@@ -232,9 +245,6 @@ func iniciarServidor() {
 
 	// Iniciar el manejador de comandos
 	go manejadorComandos(ctx)
-
-	// Iniciar el sistema de reportes
-	go iniciarSistemaReportes(ctx)
 
 	// Crear socket TCP
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", config.Puerto))

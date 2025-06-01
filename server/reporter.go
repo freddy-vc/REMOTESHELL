@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -98,7 +99,22 @@ func generateSystemReport(username string) string {
 	return report
 }
 
-func iniciarSistemaReportes(ctx context.Context) {
-	// Esta función se ejecutará como una goroutine desde iniciarServidor
-	fmt.Println("Sistema de reportes iniciado")
+func iniciarSistemaReportes(ctx context.Context, conn net.Conn, username string, periodoReporte int) {
+	fmt.Printf("Sistema de reportes iniciado para usuario %s con período de %d segundos\n", username, periodoReporte)
+	ticker := time.NewTicker(time.Duration(periodoReporte) * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			report := generateSystemReport(username)
+			_, err := conn.Write([]byte(report))
+			if err != nil {
+				fmt.Printf("Error al enviar reporte: %v\n", err)
+				return
+			}
+		}
+	}
 }

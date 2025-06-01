@@ -12,14 +12,16 @@ func SolicitarCredenciales(socket net.Conn) (string, error) {
 	reader := bufio.NewReader(os.Stdin)
 	var usuario string
 
-	for {
-		// Leer el número de intentos restantes o mensaje inicial del servidor
+	for { // Leer el número de intentos restantes o mensaje inicial del servidor
 		respuesta := make([]byte, 1024)
 		n, err := socket.Read(respuesta)
 		if err != nil {
 			return "", fmt.Errorf("error al leer respuesta del servidor: %v", err)
 		}
-		fmt.Printf("%s", string(respuesta[:n]))
+		mensajeServidor := string(respuesta[:n])
+		if !strings.Contains(mensajeServidor, "MAX_ATTEMPTS") {
+			fmt.Print(mensajeServidor)
+		}
 
 		// Verificar si se agotaron los intentos
 		respuestaStr := strings.TrimSpace(string(respuesta[:n]))
@@ -91,44 +93,11 @@ func SolicitarCredenciales(socket net.Conn) (string, error) {
 				fmt.Println("Contraseña incorrecta. Intente nuevamente.")
 				continue
 			case "MAX_ATTEMPTS":
+				fmt.Println("Se han agotado los intentos permitidos.")
 				return "", fmt.Errorf("se agotaron los intentos de autenticación")
 			default:
 				return "", fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
 			}
-		default:
-			return "", fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
-		}
-		fmt.Print("Ingrese su contraseña: ")
-		password, err := reader.ReadString('\n')
-		if err != nil {
-			return "", fmt.Errorf("error al leer contraseña: %v", err)
-		}
-		password = strings.TrimSpace(password) + "\n"
-
-		// Enviar contraseña al servidor
-		_, err = socket.Write([]byte(password))
-		if err != nil {
-			return "", fmt.Errorf("error al enviar contraseña: %v", err)
-		}
-
-		// Leer respuesta final del servidor
-		respuesta = make([]byte, 1024)
-		n, err = socket.Read(respuesta)
-		if err != nil {
-			return "", fmt.Errorf("error al leer respuesta de autenticación: %v", err)
-		}
-		respuestaStr = strings.TrimSpace(string(respuesta[:n]))
-
-		// Manejar respuesta final
-		switch respuestaStr {
-		case "AUTH_OK":
-			fmt.Println("Autenticación exitosa")
-			return usuario, nil
-		case "PASSWORD_ERROR":
-			fmt.Println("Contraseña incorrecta. Intente nuevamente.")
-			continue // Cambiar break por continue para volver al inicio del bucle
-		case "MAX_ATTEMPTS":
-			return "", fmt.Errorf("se agotaron los intentos de autenticación")
 		default:
 			return "", fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
 		}

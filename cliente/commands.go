@@ -7,15 +7,11 @@ import (
 	"net"
 	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
-// ResponseMutex se usa para sincronizar las respuestas del servidor
-var ResponseMutex sync.Mutex
-
-// ExecuteRemoteCommand envía un comando al servidor remoto y muestra la respuesta
-func ExecuteRemoteCommand(conn net.Conn, username string) {
+// EnviarComandos lee los comandos del usuario y los envía al servidor
+func EnviarComandos(conn net.Conn, username string) {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
@@ -26,51 +22,37 @@ func ExecuteRemoteCommand(conn net.Conn, username string) {
 			continue
 		}
 
-		// Eliminar el salto de línea al final
 		comando = strings.TrimSpace(comando)
-
-		// Verificar si es el comando de salida
 		if comando == "bye" {
 			fmt.Println("Cerrando sesión remota...")
 			return
 		}
 
-		// Adquirir el mutex antes de enviar el comando
-		ResponseMutex.Lock()
-
 		// Enviar el comando al servidor
 		_, err = conn.Write([]byte(comando + "\n"))
 		if err != nil {
-			ResponseMutex.Unlock()
 			fmt.Println("Error al enviar el comando:", err)
 			continue
 		}
+	}
+}
 
-		// Esperar y leer la respuesta del servidor
+// RecibirRespuestas recibe y muestra las respuestas del servidor
+func RecibirRespuestas(conn net.Conn) {
+	for {
 		respuesta, err := leerRespuestaCompleta(conn)
-
-		// Liberar el mutex después de recibir la respuesta
-		ResponseMutex.Unlock()
-
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				fmt.Println("Tiempo de espera agotado. El comando puede haberse ejecutado correctamente.")
-			} else {
-				fmt.Println("Error al recibir la respuesta:", err)
+			if err == io.EOF {
+				return
 			}
+			fmt.Println("Error al recibir respuesta:", err)
 			continue
 		}
 
-		// Mostrar la respuesta
 		if respuesta != "" {
-			if strings.HasPrefix(comando, "cd ") {
-				fmt.Print(respuesta)
-			} else {
-				// Para otros comandos, asegurar que la salida sea visible
-				fmt.Print(respuesta)
-				if !strings.HasSuffix(respuesta, "\n") {
-					fmt.Println()
-				}
+			fmt.Print(respuesta)
+			if !strings.HasSuffix(respuesta, "\n") {
+				fmt.Println()
 			}
 		}
 	}
@@ -78,9 +60,8 @@ func ExecuteRemoteCommand(conn net.Conn, username string) {
 
 // leerRespuestaCompleta lee la respuesta completa del servidor
 func leerRespuestaCompleta(conn net.Conn) (string, error) {
-	// Establecer un timeout razonable
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	defer conn.SetReadDeadline(time.Time{}) // Restaurar el timeout por defecto
+	defer conn.SetReadDeadline(time.Time{})
 
 	reader := bufio.NewReader(conn)
 	var respuestaCompleta strings.Builder
@@ -92,7 +73,6 @@ func leerRespuestaCompleta(conn net.Conn) (string, error) {
 			if err == io.EOF {
 				break
 			}
-			// Si ya tenemos datos y es un timeout, consideramos que tenemos la respuesta completa
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() && respuestaCompleta.Len() > 0 {
 				break
 			}
@@ -100,8 +80,6 @@ func leerRespuestaCompleta(conn net.Conn) (string, error) {
 		}
 
 		respuestaCompleta.Write(buffer[:n])
-
-		// Si recibimos menos datos que el tamaño del buffer, probablemente es el final
 		if n < len(buffer) {
 			break
 		}
@@ -110,13 +88,16 @@ func leerRespuestaCompleta(conn net.Conn) (string, error) {
 	return respuestaCompleta.String(), nil
 }
 
-// StartCommandShell inicia el shell de comandos remoto
-func StartCommandShell(conn net.Conn, username string) {
-	fmt.Println("*******************************************")
-	fmt.Println("*       SHELL REMOTO - CLIENTE            *")
-	fmt.Printf("*       Usuario: %-24s*\n", username)
-	fmt.Println("*      Escriba 'bye' para salir           *")
-	fmt.Println("*******************************************")
+// ExecuteRemoteCommand maneja la ejecución de comandos remotos
+func ExecuteRemoteCommand(conn net.Conn, username string) {
+	fmt.Println("[x]----------|||---------[x]")
+	fmt.Println("|   REMOTESHELL - CLIENT   |")
+	fmt.Printf("    Bienvenido: %s", username)
+	fmt.Println("| Escriba 'bye' para salir |")
+	fmt.Println("[x]----------|||---------[x]")
+	// Goroutine para recibir respuestas del servidor
+	go RecibirRespuestas(conn)
 
-	ExecuteRemoteCommand(conn, username)
+	// Enviar comandos al servidor (en el hilo principal)
+	EnviarComandos(conn, username)
 }
