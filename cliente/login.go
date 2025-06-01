@@ -49,7 +49,6 @@ func SolicitarCredenciales(socket net.Conn) (string, error) {
 			return "", fmt.Errorf("error al leer respuesta del servidor: %v", err)
 		}
 		respuestaStr = strings.TrimSpace(string(respuesta[:n]))
-
 		// Manejar respuestas relacionadas con el usuario
 		switch respuestaStr {
 		case "USER_NOT_FOUND":
@@ -61,13 +60,44 @@ func SolicitarCredenciales(socket net.Conn) (string, error) {
 		case "MAX_ATTEMPTS":
 			return "", fmt.Errorf("se agotaron los intentos de autenticación")
 		case "USER_VALID":
-			// Usuario válido, continuar con la contraseña
-			break
+			// Usuario válido, solicitar contraseña
+			fmt.Print("Ingrese su contraseña: ")
+			password, err := reader.ReadString('\n')
+			if err != nil {
+				return "", fmt.Errorf("error al leer contraseña: %v", err)
+			}
+			password = strings.TrimSpace(password) + "\n"
+
+			// Enviar contraseña al servidor
+			_, err = socket.Write([]byte(password))
+			if err != nil {
+				return "", fmt.Errorf("error al enviar contraseña: %v", err)
+			}
+
+			// Leer respuesta final del servidor
+			respuesta = make([]byte, 1024)
+			n, err = socket.Read(respuesta)
+			if err != nil {
+				return "", fmt.Errorf("error al leer respuesta de autenticación: %v", err)
+			}
+			respuestaStr = strings.TrimSpace(string(respuesta[:n]))
+
+			// Manejar respuesta final
+			switch respuestaStr {
+			case "AUTH_OK":
+				fmt.Println("Autenticación exitosa")
+				return usuario, nil
+			case "PASSWORD_ERROR":
+				fmt.Println("Contraseña incorrecta. Intente nuevamente.")
+				continue
+			case "MAX_ATTEMPTS":
+				return "", fmt.Errorf("se agotaron los intentos de autenticación")
+			default:
+				return "", fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
+			}
 		default:
 			return "", fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
 		}
-
-		// Si llegamos aquí, el usuario es válido, solicitar contraseña
 		fmt.Print("Ingrese su contraseña: ")
 		password, err := reader.ReadString('\n')
 		if err != nil {

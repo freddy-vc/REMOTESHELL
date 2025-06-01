@@ -126,7 +126,6 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 			return
 		}
 		usuario = strings.TrimSpace(usuario)
-
 		// Verificar si el usuario existe en la base de datos
 		if !usuarioExisteEnBD(usuario) {
 			fmt.Printf("Usuario '%s' no encontrado en la base de datos\n", usuario)
@@ -139,8 +138,12 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 		if !usuarioPermitido(usuario, config) {
 			fmt.Printf("Usuario '%s' no está en la lista de usuarios permitidos de config.conf\n", usuario)
 			socket.Write([]byte("USER_NOT_ALLOWED\n"))
-			continue // No cuenta como intento si el usuario no está permitido
+			intentos-- // Ahora sí cuenta como intento cuando el usuario no está permitido
+			continue
 		}
+
+		// Usuario válido y permitido, enviar confirmación
+		socket.Write([]byte("USER_VALID\n"))
 
 		// Solicitar contraseña
 		password, err := reader.ReadString('\n')
