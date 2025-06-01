@@ -42,6 +42,9 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 
 	fmt.Printf("Verificando credenciales para usuario: '%s'\n", usuario)
 
+	// Verificar si el usuario existe en users.db
+	usuarioExiste := false
+
 	// Calcular hash SHA256 de la contraseña
 	hash := sha256.Sum256([]byte(password))
 	hashStr := hex.EncodeToString(hash[:])
@@ -63,10 +66,17 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 		userFile := strings.TrimSpace(parts[0])
 		passFile := strings.TrimSpace(parts[1])
 
-		// Verificar si el usuario y contraseña coinciden
-		if usuario == userFile && hashStr == passFile {
-			fmt.Printf("Usuario '%s' autenticado exitosamente\n", usuario)
-			return usuario, nil
+		// Verificar si el usuario existe
+		if usuario == userFile {
+			usuarioExiste = true
+			// Verificar si la contraseña coincide
+			if hashStr == passFile {
+				fmt.Printf("Usuario '%s' autenticado exitosamente\n", usuario)
+				return usuario, nil
+			} else {
+				fmt.Printf("Contraseña incorrecta para usuario '%s'\n", usuario)
+				return "", fmt.Errorf("contraseña incorrecta")
+			}
 		}
 	}
 
@@ -74,8 +84,13 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 		return "", fmt.Errorf("error al leer base de datos de usuarios: %v", err)
 	}
 
-	fmt.Printf("Contraseña incorrecta para usuario '%s'\n", usuario)
-	return "", fmt.Errorf("contraseña incorrecta")
+	if !usuarioExiste {
+		fmt.Printf("Usuario '%s' no encontrado en la base de datos\n", usuario)
+		return "", fmt.Errorf("usuario no encontrado")
+	}
+
+	// Este código no debería ejecutarse nunca, pero lo dejamos por seguridad
+	return "", fmt.Errorf("error de autenticación")
 }
 
 func verificarIPPermitida(clienteIP string, config *Config) bool {

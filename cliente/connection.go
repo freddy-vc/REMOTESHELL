@@ -13,7 +13,6 @@ func Conectar(ip string, puerto string, periodoReporte int) (net.Conn, string, e
 		return nil, "", fmt.Errorf("error al conectar con el servidor: %v", err)
 	}
 
-	// Autenticar con el servidor usando la función de login.go
 	username, err := SolicitarCredenciales(conn)
 	if err != nil {
 		conn.Close()
