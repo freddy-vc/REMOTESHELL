@@ -265,6 +265,7 @@ func iniciarServidor() {
 	defer listener.Close()
 
 	fmt.Printf("Servidor escuchando en el puerto %s\n", config.Puerto)
+	fmt.Printf("Esperando conexiones...\n")
 
 	// Aceptar conexiones
 	for {
