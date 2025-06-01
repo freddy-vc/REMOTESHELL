@@ -32,7 +32,7 @@ Este proyecto implementa un sistema cliente-servidor que permite la ejecución r
 2. Solicita al usuario credenciales de acceso (Usuario y password)
 
 3. En paralelo:
-   - Permite la ejecución de comandos UNIX remotamente.
+   - Permite la ejecución de comandos UNIX remotamente mostrando el prompt con el nombre del usuario (ej: "maria>")
    - Presenta reporte de consumo de recursos cada n segundos.
 
 ## Estructura del Proyecto
@@ -41,18 +41,18 @@ Este proyecto implementa un sistema cliente-servidor que permite la ejecución r
 Proyecto-SO/
 ├── cliente/
 │   ├── main.go          # Punto de entrada y manejo de parámetros
-│   ├── connection.go    # Conexión al servidor
-│   ├── auth.go         # Autenticación
-│   ├── commands.go     # Ejecución de comandos
-│   └── report.go       # Presentación de reportes
+│   ├── connection.go    # Conexión al servidor y obtención de IP local
+│   ├── commands.go      # Ejecución de comandos con prompt personalizado
+│   └── report.go        # Presentación de reportes
 ├── server/
 │   ├── main.go         # Punto de entrada
 │   ├── serverTCP.go    # Socket y manejo de conexiones
-│   ├── commands.go     # Ejecución de comandos y monitoreo
+│   ├── commands.go     # Ejecución de comandos y monitoreo personalizado
 │   ├── config.go       # Lectura de configuración
 │   ├── config.conf     # Archivo de configuración
 │   └── users.db        # Base de datos de usuarios
-└── go.mod              # Dependencias del proyecto
+└── go.mod              # Dependencias del proyecto (crypto/sha256 de stdlib)
+```
 
 ## Monitoreo de Recursos
 
@@ -84,7 +84,7 @@ El servidor monitorea en tiempo real:
 
 ### Comandos Especiales
 1. `__GET_REPORT__`: Solicita un reporte de recursos
-2. `__SYNC__`: Sincronización de comandos
+2. `bye`: Comando para cerrar la sesión
 3. `cd`: Manejo especial para cambio de directorio
 
 ### Flujo de Datos
@@ -102,10 +102,22 @@ El servidor monitorea en tiempo real:
    ```
 
 ## Características de Seguridad
-1. Autenticación mediante hashing SHA-256
-2. Mutex para sincronización de comandos
-3. Manejo de errores y timeouts
-4. Limpieza de recursos al desconectar
+1. Autenticación mediante hashing SHA-256 (usando crypto/sha256 de la biblioteca estándar)
+2. Validación de IP del cliente contra configuración
+3. Mutex para sincronización de comandos
+4. Manejo de errores y timeouts
+5. Limpieza de recursos al desconectar
+
+## Interfaz de Usuario
+1. Shell Remoto:
+   - Prompt personalizado con nombre de usuario (ej: "maria>")
+   - Comandos con respuesta inmediata
+   - Manejo de errores con prefijo de usuario
+
+2. Reportes:
+   - Formato claro y estructurado
+   - Actualización periódica configurable
+   - Datos en tiempo real del sistema
 
 ## Requisitos del Sistema
 - **Cliente**: Windows 10 o superior
@@ -115,30 +127,37 @@ El servidor monitorea en tiempo real:
 ## Configuración y Ejecución
 
 ### Servidor (Debian)
-1. Navegar al directorio del servidor:
+1. Configurar archivo config.conf con:
+   ```
+   PUERTO=2025
+   IP_CLIENTE=192.168.1.100
+   INTENTOS_MAX=3
+   USUARIOS=maria,juan,pedro
+   ```
+
+2. Configurar users.db con credenciales (formato usuario:hash):
+   ```
+   maria:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+   ```
+
+3. Ejecutar el servidor:
    ```bash
    cd server
-   ```
-2. Ejecutar el servidor:
-   ```bash
    go run .
    ```
 
 ### Cliente (Windows)
-1. Navegar al directorio del cliente:
+1. Ejecutar con parámetros:
    ```bash
    cd cliente
-   ```
-2. Ejecutar el cliente:
-   ```bash
-   go run .
+   go run . 192.168.1.10 2025 5
    ```
 
 ## Manejo de Errores
-- Reconexión automática en caso de pérdida de conexión
-- Timeout configurable para comandos
-- Logs detallados de errores
-- Recuperación de estados inconsistentes
+- Validación de IP del cliente
+- Timeout configurable para comandos (5 segundos)
+- Mensajes de error personalizados con nombre de usuario
+- Reconexión automática dentro del límite de intentos
 
 ## Limitaciones
 - Solo soporta comandos Unix en el servidor
