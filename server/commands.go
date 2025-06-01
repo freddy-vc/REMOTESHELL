@@ -30,15 +30,15 @@ func executeSystemCommand(comando string) (string, error) {
 }
 
 func getSystemInfo() (string, error) {
-	// CPU Usage en tiempo real usando top
-	cpuCmd := "top -bn1 | grep '%Cpu' | awk '{print $2}'"
+	// CPU Usage: suma del %CPU de todos los procesos
+	cpuCmd := "ps aux | awk '{sum += $3} END {print sum}'"
 	cpuStr, err := executeSystemCommand(cpuCmd)
 	if err != nil {
 		return "", fmt.Errorf("error obteniendo CPU: %v", err)
 	}
 	cpuUsage, _ := strconv.ParseFloat(cpuStr, 64)
 
-	// Memoria en tiempo real usando free
+	// Memoria usando free
 	memCmd := "free -m | grep 'Mem:'"
 	memStr, err := executeSystemCommand(memCmd)
 	if err != nil {
@@ -55,7 +55,7 @@ func getSystemInfo() (string, error) {
 		}
 	}
 
-	// Disco en tiempo real usando df
+	// Disco usando df
 	diskCmd := "df -h / | tail -n 1"
 	diskStr, err := executeSystemCommand(diskCmd)
 	if err != nil {
@@ -71,7 +71,7 @@ func getSystemInfo() (string, error) {
 		diskUsage, _ = strconv.ParseFloat(diskUsageStr, 64)
 	}
 
-	// Procesos activos en tiempo real usando ps
+	// Procesos activos usando ps
 	procCmd := "ps aux | wc -l"
 	procStr, err := executeSystemCommand(procCmd)
 	if err != nil {
