@@ -10,73 +10,6 @@ import (
 	"time"
 )
 
-type Config struct {
-	IntentosFallidos int
-	IPPermitida      string
-}
-
-// Modificamos esta función para que también lea la IP permitida
-func LeerConfigIntentos(ruta string) (int, string, error) {
-	file, err := os.Open(ruta)
-	if err != nil {
-		return 3, "", fmt.Errorf("no se pudo abrir el archivo de configuración: %v", err)
-	}
-	defer file.Close()
-
-	var intentos int = 3 // Valor por defecto
-	var ipPermitida string = ""
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "INTENTOS_MAX=") {
-			fmt.Sscanf(line, "INTENTOS_MAX=%d", &intentos)
-		} else if strings.HasPrefix(line, "IP_CLIENTE=") {
-			ipPermitida = strings.TrimPrefix(line, "IP_CLIENTE=")
-		}
-	}
-	return intentos, ipPermitida, nil
-}
-
-// Función para obtener todas las IPs locales disponibles
-func obtenerIPsLocales() ([]string, error) {
-	var ips []string
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil, fmt.Errorf("error al obtener interfaces: %v", err)
-	}
-
-	for _, iface := range ifaces {
-		// Ignorar interfaces inactivas o loopback
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-
-		for _, addr := range addrs {
-			switch v := addr.(type) {
-			case *net.IPNet:
-				if ip4 := v.IP.To4(); ip4 != nil {
-					ips = append(ips, ip4.String())
-				}
-			case *net.IPAddr:
-				if ip4 := v.IP.To4(); ip4 != nil {
-					ips = append(ips, ip4.String())
-				}
-			}
-		}
-	}
-
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("no se encontraron IPs locales")
-	}
-	return ips, nil
-}
-
 // Función para obtener la IP local del cliente
 func obtenerIPLocal() (string, error) {
 	// Ejecutar el comando ipconfig
@@ -192,76 +125,33 @@ func autenticarConServidor(socket net.Conn) (string, error) {
 	respuestaStr := strings.TrimSpace(string(respuesta[:n]))
 
 	// Manejar diferentes tipos de respuestas
-	switch {
-	case respuestaStr == "AUTH_OK":
+	switch respuestaStr {
+	case "AUTH_OK":
 		fmt.Println("Autenticación exitosa")
 		return usuario, nil
-	case respuestaStr == "AUTH_ERROR":
+	case "AUTH_ERROR":
 		return "", fmt.Errorf("usuario o contraseña incorrectos")
-	case respuestaStr == "IP_ERROR":
-		return "", fmt.Errorf("IP no permitida")
-	case respuestaStr == "MAX_INTENTOS":
-		return "", fmt.Errorf("máximo de intentos alcanzado")
-	case strings.HasPrefix(respuestaStr, "AUTH_ERROR:"):
-		return "", fmt.Errorf(strings.TrimPrefix(respuestaStr, "AUTH_ERROR:"))
-	case strings.HasPrefix(respuestaStr, "INTENTOS_RESTANTES:"):
-		// Ignorar este mensaje y continuar con la autenticación
-		return usuario, nil
+	case "IP_ERROR":
+		return "", fmt.Errorf("IP no autorizada")
 	default:
 		return "", fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
 	}
 }
 
 func Conectar(ip string, puerto string, periodoReporte int) (net.Conn, string, error) {
-	fmt.Println("********************************")
-	fmt.Println("*   CLIENTE PROY. OPER 2025    *")
-	fmt.Println("********************************")
-
-	// Leer intentos máximos e IP permitida desde el archivo de configuración del servidor
-	intentosMax, ipPermitida, err := LeerConfigIntentos("../server/config.conf")
+	// Conectar al servidor
+	direccion := net.JoinHostPort(ip, puerto)
+	conn, err := net.Dial("tcp", direccion)
 	if err != nil {
-		fmt.Printf("Advertencia: %v\n", err)
+		return nil, "", fmt.Errorf("error al conectar con el servidor: %v", err)
 	}
-
-	// Verificar si la IP local coincide con la IP permitida
-	if ipPermitida != "" {
-		ipLocal, errIP := obtenerIPLocal()
-		if errIP != nil {
-			fmt.Printf("Error al obtener IP local: %v\n", errIP)
-			return nil, "", errIP
-		}
-
-		fmt.Printf("\nIP local seleccionada: %s\nIP permitida: %s\n", ipLocal, ipPermitida)
-		if ipLocal != ipPermitida {
-			fmt.Printf("Error: La IP local (%s) no coincide con la IP permitida (%s)\n", ipLocal, ipPermitida)
-			fmt.Println("Terminando el programa por seguridad...")
-			os.Exit(1)
-		}
-	}
-
-	var conn string = ip + ":" + puerto
-	socket, err := net.Dial("tcp", conn)
-	if err != nil {
-		return nil, "", fmt.Errorf("no se pudo conectar al servidor: %v", err)
-	}
-	fmt.Println("Conectado al socket: ", socket.RemoteAddr().String())
 
 	// Autenticar con el servidor
-	intentos := 0
-	var username string
-	for intentos < intentosMax {
-		username, err = autenticarConServidor(socket)
-		if err == nil {
-			fmt.Println("Autenticación exitosa")
-			return socket, username, nil
-		}
-		fmt.Printf("Error de autenticación: %v\n", err)
-		intentos++
-		if intentos < intentosMax {
-			fmt.Printf("Intento %d de %d. Intente nuevamente.\n", intentos+1, intentosMax)
-		}
+	username, err := autenticarConServidor(conn)
+	if err != nil {
+		conn.Close()
+		return nil, "", err
 	}
 
-	socket.Close()
-	return nil, "", fmt.Errorf("se alcanzó el número máximo de intentos fallidos de autenticación")
+	return conn, username, nil
 }
