@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -11,6 +12,7 @@ import (
 func StartReport(conn net.Conn, periodo int) {
 	for {
 		// Solicitar reporte al servidor
+		fmt.Println("Solicitando reporte al servidor...")
 		_, err := conn.Write([]byte("__GET_REPORT__\n"))
 		if err != nil {
 			fmt.Println("Error al solicitar reporte:", err)
@@ -19,14 +21,26 @@ func StartReport(conn net.Conn, periodo int) {
 
 		// Leer el reporte del servidor
 		reader := bufio.NewReader(conn)
-		reporte, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Error al leer reporte:", err)
-			return
+		var reporte strings.Builder
+
+		// Leer línea por línea hasta encontrar una línea vacía
+		for {
+			linea, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error al leer reporte:", err)
+				return
+			}
+
+			// Si la línea está vacía (solo contiene \n), terminar la lectura
+			if strings.TrimSpace(linea) == "" {
+				break
+			}
+
+			reporte.WriteString(linea)
 		}
 
 		// Presentar el reporte
-		fmt.Print(reporte)
+		fmt.Print("\n", reporte.String())
 
 		// Esperar el periodo especificado
 		time.Sleep(time.Duration(periodo) * time.Second)

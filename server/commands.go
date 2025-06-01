@@ -82,20 +82,23 @@ func getSystemInfo() (cpuUsage float64, memUsage float64, memFree float64, memTo
 func generateSystemReport() string {
 	cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, procCount, err := getSystemInfo()
 	if err != nil {
-		return fmt.Sprintf("Error generando reporte: %v\n", err)
+		return fmt.Sprintf("Error generando reporte: %v\n\n", err)
 	}
 
-	return fmt.Sprintf("[DEBIAN] Recursos del Sistema:\n"+
+	report := fmt.Sprintf("felipe> [DEBIAN] Recursos del Sistema:\n"+
 		"- CPU: %.2f%%\n"+
 		"- Memoria: %.2f%% (%.2f MB libre de %.2f MB)\n"+
 		"- Disco: %.2f%% (%.2f GB libre de %.2f GB)\n"+
 		"- Procesos Activos: %d\n"+
-		"- Hora: %s\n",
+		"- Hora: %s\n\n", // Agregamos un salto de línea extra al final
 		cpuUsage,
 		memUsage, memFree, memTotal,
 		diskUsage, diskFree, diskTotal,
 		procCount,
 		time.Now().Format("2006-01-02 15:04:05"))
+
+	fmt.Print("Enviando reporte al cliente:\n", report) // Log en servidor
+	return report
 }
 
 func ExecuteCommand(comando string) string {
@@ -109,6 +112,7 @@ func ExecuteCommand(comando string) string {
 
 	// Manejar solicitud de reporte
 	if comando == "__GET_REPORT__" {
+		fmt.Println("Recibida solicitud de reporte") // Log en servidor
 		return generateSystemReport()
 	}
 
