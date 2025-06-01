@@ -3,8 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -28,75 +26,6 @@ type CommandRequest struct {
 	User     string
 	Address  string
 	Response chan string
-}
-
-func usuarioPermitido(usuario string, config *Config) bool {
-	usuarios := strings.Split(config.Usuarios, ",")
-	for _, u := range usuarios {
-		if strings.TrimSpace(u) == strings.TrimSpace(usuario) {
-			return true
-		}
-	}
-	return false
-}
-
-func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
-	// Leer usuario
-	usuario, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("error al leer usuario: %v", err)
-	}
-	usuario = strings.TrimSpace(usuario)
-
-	// Primero verificar si el usuario está en la lista de permitidos en config.conf
-	if !usuarioPermitido(usuario, config) {
-		fmt.Printf("Usuario '%s' no está en la lista de usuarios permitidos de config.conf\n", usuario)
-		return "", fmt.Errorf("usuario no autorizado en config.conf")
-	}
-
-	// Si el usuario está permitido, verificar la contraseña
-	password, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("error al leer contraseña: %v", err)
-	}
-	password = strings.TrimSpace(password)
-
-	fmt.Printf("Verificando credenciales para usuario: '%s'\n", usuario)
-
-	// Calcular hash SHA256 de la contraseña
-	hash := sha256.Sum256([]byte(password))
-	hashStr := hex.EncodeToString(hash[:])
-
-	// Verificar en users.db
-	file, err := os.Open("users.db")
-	if err != nil {
-		return "", fmt.Errorf("error al abrir base de datos de usuarios: %v", err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		userFile := strings.TrimSpace(parts[0])
-		passFile := strings.TrimSpace(parts[1])
-
-		// Verificar si el usuario y contraseña coinciden
-		if usuario == userFile && hashStr == passFile {
-			fmt.Printf("Usuario '%s' autenticado exitosamente\n", usuario)
-			return usuario, nil
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("error al leer base de datos de usuarios: %v", err)
-	}
-
-	fmt.Printf("Contraseña incorrecta para usuario '%s'\n", usuario)
-	return "", fmt.Errorf("contraseña incorrecta")
 }
 
 func procesarComandoConcurrente(cmd CommandRequest) {
@@ -164,7 +93,7 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 
 	// Verificar que la IP del cliente está permitida
 	clienteIP := strings.Split(socket.RemoteAddr().String(), ":")[0]
-	if clienteIP != config.IPPermitida {
+	if !verificarIPPermitida(clienteIP, config) {
 		fmt.Printf("Conexión rechazada de IP no permitida: %s\n", clienteIP)
 		socket.Write([]byte("IP_ERROR\n"))
 		return
@@ -256,6 +185,9 @@ func iniciarServidor() {
 	// Iniciar el manejador de comandos
 	go manejadorComandos(ctx)
 
+	// Iniciar el sistema de reportes
+	go iniciarSistemaReportes(ctx)
+
 	// Crear socket TCP
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", config.Puerto))
 	if err != nil {
@@ -267,16 +199,21 @@ func iniciarServidor() {
 	fmt.Printf("Servidor escuchando en el puerto %s\n", config.Puerto)
 	fmt.Printf("Esperando conexiones...\n")
 
-	// Aceptar conexiones
-	for {
-		socket, err := listener.Accept()
-		if err != nil {
-			fmt.Printf("Error al aceptar conexión: %v\n", err)
-			continue
-		}
-
-		activeClients.Add(1)
-		atomic.AddInt32(&clientCount, 1)
-		go manejarCliente(ctx, socket, config)
+	// Aceptar una única conexión
+	fmt.Println("El servidor solo aceptará una conexión")
+	socket, err := listener.Accept()
+	if err != nil {
+		fmt.Printf("Error al aceptar conexión: %v\n", err)
+		os.Exit(1)
 	}
+
+	fmt.Printf("Conexión aceptada desde: %s\n", socket.RemoteAddr().String())
+	activeClients.Add(1)
+	atomic.AddInt32(&clientCount, 1)
+
+	// Manejar cliente en el hilo principal (no en una goroutine)
+	manejarCliente(ctx, socket, config)
+
+	fmt.Println("Servidor finalizado después de atender a un cliente")
+	// El servidor termina después de atender a un cliente
 }
