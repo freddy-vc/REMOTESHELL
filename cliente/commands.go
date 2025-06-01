@@ -7,8 +7,12 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
+
+// ResponseMutex se usa para sincronizar las respuestas del servidor
+var ResponseMutex sync.Mutex
 
 // ExecuteRemoteCommand envía un comando al servidor remoto y muestra la respuesta
 func ExecuteRemoteCommand(conn net.Conn, username string) {

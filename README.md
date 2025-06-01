@@ -1,95 +1,84 @@
-# Sistema Cliente-Servidor para Monitoreo y Ejecución de Comandos
+# Sistema Cliente-Servidor para Ejecución Remota de Comandos
 
-Este proyecto implementa un sistema cliente-servidor que permite la ejecución remota de comandos y el monitoreo de recursos del sistema. El sistema está compuesto por dos módulos principales:
+Este proyecto implementa un sistema cliente-servidor que permite la ejecución remota de comandos UNIX y el monitoreo de recursos del sistema.
 
-## Arquitectura del Sistema
+## Módulo Linux (Servidor)
 
-### Módulo Cliente (Windows)
-- **Ubicación**: `/cliente`
-- **Plataforma**: Windows
-- **Funcionalidades**:
-  1. Conexión remota al servidor Debian
-  2. Autenticación mediante credenciales (usuario/contraseña con hash SHA-256)
-  3. Envío de comandos al servidor
-  4. Recepción y presentación de resultados
-  5. Monitoreo periódico de recursos del servidor
+1. Abre un socket Servidor y espera conexión remota.
+2. Lee archivo plano de configuración (.conf) donde obtiene:
+   - IP permitida al cliente
+   - Puerto por el que atiende
+   - Cantidad de intentos fallidos de autenticación
+   - Usuarios permitidos
 
-### Módulo Servidor (Debian)
-- **Ubicación**: `/server`
-- **Plataforma**: Debian Linux
-- **Funcionalidades**:
-  1. Creación y gestión de socket TCP
-  2. Autenticación de clientes
-  3. Ejecución de comandos Unix
-  4. Monitoreo de recursos del sistema
-  5. Generación y envío de reportes
+3. Autentica usuario remoto contra una base de datos de usuario (archivo plano).
+   La validación del password se hace con el algoritmo de hash SHA-256.
 
-## Funcionalidades Detalladas
+4. En paralelo:
+   - Recibe comando remoto, lo ejecuta y envía la respuesta por el socket.
+   - Genera reporte de consumo de recursos (procesador, procesos, memoria y disco).
+     Luego lo envía por socket cada n segundos (n es un parámetro recibido remotamente).
 
-### 1. Conexión y Autenticación
-- El servidor escucha conexiones TCP entrantes
-- El cliente se conecta proporcionando credenciales
-- Las contraseñas se transmiten hasheadas con SHA-256
-- El servidor verifica las credenciales antes de aceptar la conexión
+## Módulo Windows (Cliente)
 
-### 2. Ejecución de Comandos
-- El cliente puede enviar comandos Unix al servidor
-- Los comandos se ejecutan en el servidor usando `/bin/bash`
-- Manejo especial del comando `cd` para navegación de directorios
-- Captura y retorno de salida estándar y errores
-- Sincronización mediante mutex para evitar conflictos
+1. Se conecta al Servidor remoto (recibe parámetros de conexión al momento de ejecutar la aplicación):
+   - IP
+   - Puerto
+   - PeriodoReporte
 
-### 3. Monitoreo de Recursos
-El servidor monitorea en tiempo real:
+   Ejemplo: `clienteOperativo 10.1.3.3 2306 5`
+   (Se va a conectar a la IP 10.1.3.3, por el puerto 2306 y va a recibir reportes cada 5 segundos)
 
-#### CPU
-- Comando: `ps aux | awk '{sum += $3} END {print sum}'`
-- Muestra: Suma total del porcentaje de CPU usado por todos los procesos activos
+2. Solicita al usuario credenciales de acceso (Usuario y password)
 
-#### Memoria
-- Comando: `free -m | grep 'Mem:'`
-- Muestra:
-  - Porcentaje de uso
-  - Memoria libre (MB)
-  - Memoria total (MB)
-
-#### Disco
-- Comando: `df -h / | tail -n 1`
-- Muestra:
-  - Porcentaje de uso
-  - Espacio libre (GB)
-  - Espacio total (GB)
-
-#### Procesos
-- Comando: `ps aux | wc -l`
-- Muestra: Número total de procesos activos
-
-### 4. Sistema de Reportes
-- **Generación**: El servidor genera reportes en tiempo real
-- **Periodicidad**: Configurable por el cliente
-- **Formato del Reporte**:
-  ```
-  felipe> [DEBIAN] Recursos del Sistema:
-  - CPU: XX.XX%
-  - Memoria: XX.XX% (XXXX MB libre de XXXX MB)
-  - Disco: XX.XX% (XX GB libre de XX GB)
-  - Procesos Activos: XXX
-  - Hora: YYYY-MM-DD HH:MM:SS
-  ```
+3. En paralelo:
+   - Permite la ejecución de comandos UNIX remotamente.
+   - Presenta reporte de consumo de recursos cada n segundos.
 
 ## Estructura del Proyecto
 
 ```
 Proyecto-SO/
 ├── cliente/
-│   ├── main.go          # Punto de entrada del cliente
-│   └── report.go        # Manejo de reportes de recursos
+│   ├── main.go          # Punto de entrada y manejo de parámetros
+│   ├── connection.go    # Conexión al servidor
+│   ├── auth.go         # Autenticación
+│   ├── commands.go     # Ejecución de comandos
+│   └── report.go       # Presentación de reportes
 ├── server/
-│   ├── main.go          # Punto de entrada del servidor
-│   └── commands.go      # Ejecución de comandos y monitoreo
-├── go.mod               # Dependencias del proyecto
-└── go.sum               # Checksums de dependencias
-```
+│   ├── main.go         # Punto de entrada
+│   ├── serverTCP.go    # Socket y manejo de conexiones
+│   ├── commands.go     # Ejecución de comandos y monitoreo
+│   ├── config.go       # Lectura de configuración
+│   ├── config.conf     # Archivo de configuración
+│   └── users.db        # Base de datos de usuarios
+└── go.mod              # Dependencias del proyecto
+
+## Monitoreo de Recursos
+
+El servidor monitorea en tiempo real:
+
+### CPU
+- Comando: `vmstat 1 2 | tail -1 | awk '{print 100 - $15 "%"}'`
+- Muestra: Porcentaje de uso de CPU basado en el tiempo idle del sistema
+
+### Memoria
+- Comando: `free -m | grep 'Mem:'`
+- Muestra:
+  - Porcentaje de uso
+  - Memoria libre (MB)
+  - Memoria total (MB)
+
+### Disco
+- Comando: `df -h / | tail -n 1`
+- Muestra:
+  - Porcentaje de uso
+  - Espacio libre (GB)
+  - Espacio total (GB)
+
+### Procesos
+- Comando: `ps aux | wc -l`
+- Muestra: Número total de procesos activos
 
 ## Protocolo de Comunicación
 

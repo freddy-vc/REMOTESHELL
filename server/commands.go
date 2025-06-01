@@ -30,12 +30,14 @@ func executeSystemCommand(comando string) (string, error) {
 }
 
 func getSystemInfo() (string, error) {
-	// CPU Usage: suma del %CPU de todos los procesos
-	cpuCmd := "ps aux | awk '{sum += $3} END {print sum}'"
+	// CPU Usage usando vmstat
+	cpuCmd := "vmstat 1 2 | tail -1 | awk '{print 100 - $15 \"%\"}'"
 	cpuStr, err := executeSystemCommand(cpuCmd)
 	if err != nil {
 		return "", fmt.Errorf("error obteniendo CPU: %v", err)
 	}
+	// Remover el símbolo % para la conversión
+	cpuStr = strings.TrimRight(cpuStr, "%")
 	cpuUsage, _ := strconv.ParseFloat(cpuStr, 64)
 
 	// Memoria usando free
