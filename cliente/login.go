@@ -60,6 +60,11 @@ func SolicitarCredenciales(socket net.Conn) (string, error) {
 			continue
 		case "MAX_ATTEMPTS":
 			return "", fmt.Errorf("se agotaron los intentos de autenticación")
+		case "USER_VALID":
+			// Usuario válido, continuar con la contraseña
+			break
+		default:
+			return "", fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
 		}
 
 		// Si llegamos aquí, el usuario es válido, solicitar contraseña
@@ -91,7 +96,7 @@ func SolicitarCredenciales(socket net.Conn) (string, error) {
 			return usuario, nil
 		case "PASSWORD_ERROR":
 			fmt.Println("Contraseña incorrecta. Intente nuevamente.")
-			break // Volver al inicio del bucle para solicitar usuario
+			continue // Cambiar break por continue para volver al inicio del bucle
 		case "MAX_ATTEMPTS":
 			return "", fmt.Errorf("se agotaron los intentos de autenticación")
 		default:
