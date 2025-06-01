@@ -111,18 +111,63 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 	// Iniciar goroutine para enviar respuestas
 	go enviarRespuestasCliente(socket, respChan)
 
-	// Enviar número de intentos restantes
-	socket.Write([]byte(fmt.Sprintf("Intentos restantes: %d\n", config.IntentosFallidos)))
+	// Proceso de autenticación con intentos
+	intentos := config.IntentosFallidos
+	var usuario string
 
-	// Autenticar al usuario
-	usuario, err := autenticarUsuario(reader, config)
-	if err != nil {
-		socket.Write([]byte("AUTH_ERROR\n"))
-		return
+	for intentos > 0 {
+		// Enviar número de intentos restantes
+		socket.Write([]byte(fmt.Sprintf("Intentos restantes: %d\n", intentos)))
+
+		// Solicitar usuario
+		usuario, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("Error al leer usuario: %v\n", err)
+			return
+		}
+		usuario = strings.TrimSpace(usuario)
+
+		// Verificar si el usuario existe en la base de datos
+		if !usuarioExisteEnBD(usuario) {
+			fmt.Printf("Usuario '%s' no encontrado en la base de datos\n", usuario)
+			socket.Write([]byte("USER_NOT_FOUND\n"))
+			intentos--
+			continue
+		}
+
+		// Verificar si el usuario está permitido en config.conf
+		if !usuarioPermitido(usuario, config) {
+			fmt.Printf("Usuario '%s' no está en la lista de usuarios permitidos de config.conf\n", usuario)
+			socket.Write([]byte("USER_NOT_ALLOWED\n"))
+			continue // No cuenta como intento si el usuario no está permitido
+		}
+
+		// Solicitar contraseña
+		password, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("Error al leer contraseña: %v\n", err)
+			return
+		}
+		password = strings.TrimSpace(password)
+
+		// Verificar contraseña
+		if verificarContraseña(usuario, password) {
+			fmt.Printf("Usuario '%s' autenticado exitosamente\n", usuario)
+			socket.Write([]byte("AUTH_OK\n"))
+			break // Autenticación exitosa, salir del bucle
+		} else {
+			fmt.Printf("Contraseña incorrecta para usuario '%s'\n", usuario)
+			socket.Write([]byte("PASSWORD_ERROR\n"))
+			intentos--
+		}
 	}
 
-	// Enviar confirmación de autenticación exitosa
-	socket.Write([]byte("AUTH_OK\n"))
+	// Verificar si se agotaron los intentos
+	if intentos <= 0 {
+		fmt.Printf("Se agotaron los intentos para el cliente %s\n", clienteIP)
+		socket.Write([]byte("MAX_ATTEMPTS\n"))
+		return
+	}
 
 	// Procesar comandos del cliente
 	for {
@@ -152,14 +197,14 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 				Response: respChan,
 			}
 
-			// Ejecutar el comando y enviar respuesta
-			procesarComandoConcurrente(req)
-			respuesta := <-respChan
+			// Enviar comando para procesamiento
+			go procesarComandoConcurrente(req)
 
-			// Enviar respuesta al cliente
+			// Esperar respuesta
+			respuesta := <-respChan
 			_, err = socket.Write([]byte(respuesta))
 			if err != nil {
-				fmt.Printf("Error al enviar respuesta al cliente: %v\n", err)
+				fmt.Printf("Error al enviar respuesta: %v\n", err)
 				return
 			}
 		}
