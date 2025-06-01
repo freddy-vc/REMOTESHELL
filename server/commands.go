@@ -29,22 +29,24 @@ func executeSystemCommand(comando string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func getSystemInfo() (cpuUsage float64, memUsage float64, memFree float64, memTotal float64, diskUsage float64, diskFree float64, diskTotal float64, procCount int, err error) {
-	// CPU Usage usando top
+func getSystemInfo() (string, error) {
+	// CPU Usage en tiempo real usando top
 	cpuCmd := "top -bn1 | grep '%Cpu' | awk '{print $2}'"
 	cpuStr, err := executeSystemCommand(cpuCmd)
 	if err != nil {
-		return 0, 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("error obteniendo CPU: %v", err)
+		return "", fmt.Errorf("error obteniendo CPU: %v", err)
 	}
-	cpuUsage, _ = strconv.ParseFloat(cpuStr, 64)
+	cpuUsage, _ := strconv.ParseFloat(cpuStr, 64)
 
-	// Memoria usando free
+	// Memoria en tiempo real usando free
 	memCmd := "free -m | grep 'Mem:'"
 	memStr, err := executeSystemCommand(memCmd)
 	if err != nil {
-		return 0, 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("error obteniendo memoria: %v", err)
+		return "", fmt.Errorf("error obteniendo memoria: %v", err)
 	}
 	memFields := strings.Fields(memStr)
+	var memTotal, memFree float64
+	var memUsage float64
 	if len(memFields) >= 4 {
 		memTotal, _ = strconv.ParseFloat(memFields[1], 64)
 		memFree, _ = strconv.ParseFloat(memFields[3], 64)
@@ -53,13 +55,15 @@ func getSystemInfo() (cpuUsage float64, memUsage float64, memFree float64, memTo
 		}
 	}
 
-	// Disco usando df
+	// Disco en tiempo real usando df
 	diskCmd := "df -h / | tail -n 1"
 	diskStr, err := executeSystemCommand(diskCmd)
 	if err != nil {
-		return 0, 0, 0, 0, 0, 0, 0, 0, fmt.Errorf("error obteniendo disco: %v", err)
+		return "", fmt.Errorf("error obteniendo disco: %v", err)
 	}
 	diskFields := strings.Fields(diskStr)
+	var diskTotal, diskFree float64
+	var diskUsage float64
 	if len(diskFields) >= 5 {
 		diskTotal, _ = strconv.ParseFloat(strings.TrimRight(diskFields[1], "G"), 64)
 		diskFree, _ = strconv.ParseFloat(strings.TrimRight(diskFields[3], "G"), 64)
@@ -67,35 +71,36 @@ func getSystemInfo() (cpuUsage float64, memUsage float64, memFree float64, memTo
 		diskUsage, _ = strconv.ParseFloat(diskUsageStr, 64)
 	}
 
-	// Número de procesos usando ps
+	// Procesos activos en tiempo real usando ps
 	procCmd := "ps aux | wc -l"
 	procStr, err := executeSystemCommand(procCmd)
 	if err != nil {
-		return cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, 0, fmt.Errorf("error obteniendo procesos: %v", err)
+		return "", fmt.Errorf("error obteniendo procesos: %v", err)
 	}
-	procCount64, _ := strconv.ParseInt(procStr, 10, 64)
-	procCount = int(procCount64) - 1 // Restamos 1 por el header de ps
+	procCount, _ := strconv.ParseInt(procStr, 10, 64)
+	procCount-- // Restamos 1 por el header de ps
 
-	return cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, procCount, nil
-}
-
-func generateSystemReport() string {
-	cpuUsage, memUsage, memFree, memTotal, diskUsage, diskFree, diskTotal, procCount, err := getSystemInfo()
-	if err != nil {
-		return fmt.Sprintf("Error generando reporte: %v\n\n", err)
-	}
-
+	// Formatear el reporte con los datos en tiempo real
 	report := fmt.Sprintf("felipe> [DEBIAN] Recursos del Sistema:\n"+
 		"- CPU: %.2f%%\n"+
 		"- Memoria: %.2f%% (%.2f MB libre de %.2f MB)\n"+
 		"- Disco: %.2f%% (%.2f GB libre de %.2f GB)\n"+
 		"- Procesos Activos: %d\n"+
-		"- Hora: %s\n\n", // Agregamos un salto de línea extra al final
+		"- Hora: %s\n\n",
 		cpuUsage,
 		memUsage, memFree, memTotal,
 		diskUsage, diskFree, diskTotal,
 		procCount,
 		time.Now().Format("2006-01-02 15:04:05"))
+
+	return report, nil
+}
+
+func generateSystemReport() string {
+	report, err := getSystemInfo()
+	if err != nil {
+		return fmt.Sprintf("Error generando reporte: %v\n\n", err)
+	}
 
 	fmt.Print("Enviando reporte al cliente:\n", report) // Log en servidor
 	return report
@@ -107,12 +112,12 @@ func ExecuteCommand(comando string) string {
 
 	comando = strings.TrimSpace(comando)
 	if comando == "" {
-		return "\n" // Retorna solo un salto de línea para comandos vacíos
+		return "\n"
 	}
 
 	// Manejar solicitud de reporte
 	if comando == "__GET_REPORT__" {
-		fmt.Println("Recibida solicitud de reporte") // Log en servidor
+		fmt.Println("Recibida solicitud de reporte")
 		return generateSystemReport()
 	}
 
@@ -120,32 +125,25 @@ func ExecuteCommand(comando string) string {
 
 	// Manejar el comando cd de forma especial
 	if strings.HasPrefix(comando, "cd ") {
-		// Extraer el directorio
 		dir := strings.TrimPrefix(comando, "cd ")
 		dir = strings.TrimSpace(dir)
 
-		// Cambiar el directorio
 		err := os.Chdir(dir)
 		if err != nil {
 			return fmt.Sprintf("Error al cambiar al directorio %s: %v\n", dir, err)
 		}
 
-		// Actualizar el directorio actual
 		currentDir, _ = os.Getwd()
 		return fmt.Sprintf("Directorio cambiado a: %s\n", currentDir)
 	}
 
-	// Ejecutar comando usando /bin/bash para mejor compatibilidad con comandos UNIX
+	// Ejecutar comando usando /bin/bash
 	cmd := exec.Command("/bin/bash", "-c", comando)
-
-	// Establecer el directorio de trabajo
 	cmd.Dir = currentDir
 
-	// Capturar tanto la salida estándar como los errores
 	output, err := cmd.CombinedOutput()
 	resultado := string(output)
 
-	// Si hay error pero hay salida, mostrar la salida
 	if err != nil {
 		if len(resultado) > 0 {
 			return resultado
@@ -153,12 +151,10 @@ func ExecuteCommand(comando string) string {
 		return fmt.Sprintf("Error al ejecutar comando: %v\n", err)
 	}
 
-	// Si no hay salida, enviar mensaje de confirmación
 	if strings.TrimSpace(resultado) == "" {
 		return fmt.Sprintf("Comando '%s' ejecutado correctamente\n", comando)
 	}
 
-	// Asegurarse de que la salida termine con un salto de línea
 	if !strings.HasSuffix(resultado, "\n") {
 		resultado += "\n"
 	}
