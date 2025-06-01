@@ -31,15 +31,23 @@ func ExecuteRemoteCommand(conn net.Conn) {
 			return
 		}
 
+		// Adquirir el mutex antes de enviar el comando
+		ResponseMutex.Lock()
+
 		// Enviar el comando al servidor
 		_, err = conn.Write([]byte(comando + "\n"))
 		if err != nil {
+			ResponseMutex.Unlock()
 			fmt.Println("Error al enviar el comando:", err)
 			continue
 		}
 
 		// Esperar y leer la respuesta del servidor
 		respuesta, err := leerRespuestaCompleta(conn)
+
+		// Liberar el mutex después de recibir la respuesta
+		ResponseMutex.Unlock()
+
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				fmt.Println("Tiempo de espera agotado. El comando puede haberse ejecutado correctamente.")

@@ -29,7 +29,12 @@ func StartReport(conn net.Conn, periodo int) {
 		reporte := fmt.Sprintf("__REPORTE__: Recursos - Memoria: %.2f MB | CPUs: %d | Goroutines: %d | GC recientes: %d | Hora: %s\n",
 			memMB, numCPU, numGoroutine, gcDelta, time.Now().Format("2006-01-02 15:04:05"))
 
+		// Adquirir el mutex antes de enviar el reporte
+		ResponseMutex.Lock()
 		_, err := conn.Write([]byte(reporte))
+		// Liberar el mutex después de enviar el reporte
+		ResponseMutex.Unlock()
+
 		if err != nil {
 			fmt.Println("Error al enviar el reporte:", err)
 			return
