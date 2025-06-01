@@ -78,7 +78,7 @@ func main() {
 		}
 
 		// Iniciar el envío periódico de reportes en una goroutine
-		go StartReport(conn, periodoReporte)
+		go StartReport(conn, username, periodoReporte)
 		StartCommandShell(conn, username)
 		conectado = true
 		break

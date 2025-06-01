@@ -29,7 +29,7 @@ func executeSystemCommand(comando string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func getSystemInfo() (string, error) {
+func getSystemInfo(username string) (string, error) {
 	// CPU Usage usando vmstat
 	cpuCmd := "vmstat 1 2 | tail -1 | awk '{print 100 - $15 \"%\"}'"
 	cpuStr, err := executeSystemCommand(cpuCmd)
@@ -83,12 +83,13 @@ func getSystemInfo() (string, error) {
 	procCount-- // Restamos 1 por el header de ps
 
 	// Formatear el reporte con los datos en tiempo real
-	report := fmt.Sprintf("felipe> [DEBIAN] Recursos del Sistema:\n"+
+	report := fmt.Sprintf("%s> [DEBIAN] Recursos del Sistema:\n"+
 		"- CPU: %.2f%%\n"+
 		"- Memoria: %.2f%% (%.2f MB libre de %.2f MB)\n"+
 		"- Disco: %.2f%% (%.2f GB libre de %.2f GB)\n"+
 		"- Procesos Activos: %d\n"+
 		"- Hora: %s\n\n",
+		username,
 		cpuUsage,
 		memUsage, memFree, memTotal,
 		diskUsage, diskFree, diskTotal,
@@ -98,8 +99,8 @@ func getSystemInfo() (string, error) {
 	return report, nil
 }
 
-func generateSystemReport() string {
-	report, err := getSystemInfo()
+func generateSystemReport(username string) string {
+	report, err := getSystemInfo(username)
 	if err != nil {
 		return fmt.Sprintf("Error generando reporte: %v\n\n", err)
 	}
@@ -108,7 +109,7 @@ func generateSystemReport() string {
 	return report
 }
 
-func ExecuteCommand(comando string) string {
+func ExecuteCommand(comando string, username string) string {
 	cmdMutex.Lock()
 	defer cmdMutex.Unlock()
 
@@ -120,7 +121,7 @@ func ExecuteCommand(comando string) string {
 	// Manejar solicitud de reporte
 	if comando == "__GET_REPORT__" {
 		fmt.Println("Recibida solicitud de reporte")
-		return generateSystemReport()
+		return generateSystemReport(username)
 	}
 
 	fmt.Printf("Ejecutando comando UNIX: %s\n", comando)

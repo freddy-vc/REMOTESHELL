@@ -102,7 +102,7 @@ func autenticarUsuario(reader *bufio.Reader, config *Config) (string, error) {
 func procesarComandoConcurrente(cmd CommandRequest) {
 	defer close(cmd.Response)
 	commandMutex.Lock()
-	respuesta := ExecuteCommand(cmd.Command)
+	respuesta := ExecuteCommand(cmd.Command, cmd.User)
 	commandMutex.Unlock()
 	cmd.Response <- respuesta
 }

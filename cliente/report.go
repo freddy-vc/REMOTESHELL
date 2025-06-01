@@ -9,13 +9,12 @@ import (
 )
 
 // StartReport recibe y presenta periódicamente el reporte de consumo de recursos del servidor.
-func StartReport(conn net.Conn, periodo int) {
+func StartReport(conn net.Conn, username string, periodo int) {
 	for {
 		// Solicitar reporte al servidor
-		fmt.Println("Solicitando reporte al servidor...")
 		_, err := conn.Write([]byte("__GET_REPORT__\n"))
 		if err != nil {
-			fmt.Println("Error al solicitar reporte:", err)
+			fmt.Printf("Error al solicitar reporte: %v\n", err)
 			return
 		}
 
@@ -27,7 +26,7 @@ func StartReport(conn net.Conn, periodo int) {
 		for {
 			linea, err := reader.ReadString('\n')
 			if err != nil {
-				fmt.Println("Error al leer reporte:", err)
+				fmt.Printf("Error al leer reporte: %v\n", err)
 				return
 			}
 

@@ -113,9 +113,9 @@ func leerRespuestaCompleta(conn net.Conn) (string, error) {
 // StartCommandShell inicia el shell de comandos remoto
 func StartCommandShell(conn net.Conn, username string) {
 	fmt.Println("*******************************************")
-	fmt.Println("*       SHELL REMOTO - CLIENTE          *")
+	fmt.Println("*       SHELL REMOTO - CLIENTE            *")
 	fmt.Printf("*       Usuario: %-24s*\n", username)
-	fmt.Println("*      Escriba 'bye' para salir         *")
+	fmt.Println("*      Escriba 'bye' para salir           *")
 	fmt.Println("*******************************************")
 
 	ExecuteRemoteCommand(conn, username)
