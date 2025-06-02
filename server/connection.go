@@ -125,16 +125,17 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 				continue
 			}
 
-			// Procesar otros comandos
-			commandMutex.Lock()
-			respuesta := ExecuteCommand(comando, usuario)
-			commandMutex.Unlock()
+			// Procesar otros comandos en goroutine
+			go func(cmd string) {
+				commandMutex.Lock()
+				respuesta := ExecuteCommand(cmd, usuario)
+				commandMutex.Unlock()
 
-			_, err = socket.Write([]byte(respuesta))
-			if err != nil {
-				fmt.Printf("Error al enviar respuesta: %v\n", err)
-				return
-			}
+				_, err := socket.Write([]byte(respuesta))
+				if err != nil {
+					fmt.Printf("Error al enviar respuesta: %v\n", err)
+				}
+			}(comando)
 		}
 	}
 }
