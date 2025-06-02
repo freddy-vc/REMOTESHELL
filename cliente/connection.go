@@ -13,6 +13,22 @@ func Conectar(ip string, puerto string, periodoReporte int) (net.Conn, string, e
 	if err != nil {
 		return nil, "", fmt.Errorf("error al conectar con el servidor: %v", err)
 	}
+
+	// Leer respuesta inicial del servidor para verificar IP
+	respuesta := make([]byte, 1024)
+	n, err := conn.Read(respuesta)
+	if err != nil {
+		conn.Close()
+		return nil, "", fmt.Errorf("error al leer respuesta del servidor: %v", err)
+	}
+
+	respuestaStr := strings.TrimSpace(string(respuesta[:n]))
+	if respuestaStr == "IP_ERROR" {
+		conn.Close()
+		fmt.Println("IP NO AUTORIZADA")
+		return nil, "", fmt.Errorf("IP no autorizada")
+	}
+
 	username, err := SolicitarCredenciales(conn)
 	if err != nil {
 		conn.Close()
@@ -27,14 +43,14 @@ func Conectar(ip string, puerto string, periodoReporte int) (net.Conn, string, e
 	}
 
 	// Esperar confirmación del servidor
-	respuesta := make([]byte, 1024)
-	n, err := conn.Read(respuesta)
+	respuesta = make([]byte, 1024)
+	n, err = conn.Read(respuesta)
 	if err != nil {
 		conn.Close()
 		return nil, "", fmt.Errorf("error al recibir confirmación del periodo de reporte: %v", err)
 	}
 
-	respuestaStr := strings.TrimSpace(string(respuesta[:n]))
+	respuestaStr = strings.TrimSpace(string(respuesta[:n]))
 	if respuestaStr != "REPORT_PERIOD_OK" {
 		conn.Close()
 		return nil, "", fmt.Errorf("error al configurar periodo de reporte: %s", respuestaStr)
