@@ -29,6 +29,11 @@ func Conectar(ip string, puerto string, periodoReporte int) (net.Conn, string, e
 		return nil, "", fmt.Errorf("IP no autorizada")
 	}
 
+	if respuestaStr != "IP_OK" {
+		conn.Close()
+		return nil, "", fmt.Errorf("respuesta no reconocida del servidor: %s", respuestaStr)
+	}
+
 	username, err := SolicitarCredenciales(conn)
 	if err != nil {
 		conn.Close()

@@ -101,6 +101,8 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 	}
 
 	fmt.Printf("Cliente con IP permitida conectado: %s\n", clienteIP)
+	socket.Write([]byte("IP_OK\n"))
+
 	reader := bufio.NewReader(socket)
 
 	// Crear canal para respuestas del cliente
