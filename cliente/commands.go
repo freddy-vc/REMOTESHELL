@@ -92,8 +92,8 @@ func leerRespuestaCompleta(conn net.Conn) (string, error) {
 func ExecuteRemoteCommand(conn net.Conn, username string) {
 	fmt.Println("[x]----------|||---------[x]")
 	fmt.Println("|   REMOTESHELL - CLIENT   |")
-	fmt.Printf("    Bienvenido: %s", username)
-	fmt.Println("| Escriba 'bye' para salir |")
+	fmt.Printf("   Bienvenido: %s", username)
+	fmt.Println("\n| Escriba 'bye' para salir |")
 	fmt.Println("[x]----------|||---------[x]")
 	// Goroutine para recibir respuestas del servidor
 	go RecibirRespuestas(conn)
