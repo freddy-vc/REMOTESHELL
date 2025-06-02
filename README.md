@@ -38,20 +38,26 @@ Este proyecto implementa un sistema cliente-servidor que permite la ejecución r
 ## Estructura del Proyecto
 
 ```
-Proyecto-SO/
+REMOTESHELL/
 ├── cliente/
-│   ├── main.go          # Punto de entrada y manejo de parámetros
-│   ├── connection.go    # Conexión al servidor y obtención de IP local
-│   ├── commands.go      # Ejecución de comandos con prompt personalizado
-│   └── report.go        # Presentación de reportes
+│   ├── cliente.exe     # Ejecutable del cliente para Windows
+│   ├── main.go         # Punto de entrada y manejo de parámetros
+│   ├── connection.go   # Conexión al servidor y obtención de IP local
+│   ├── commands.go     # Ejecución de comandos con prompt personalizado
+│   ├── login.go        # Manejo de autenticación del usuario
+│   └── report.go       # Presentación de reportes
 ├── server/
 │   ├── main.go         # Punto de entrada
-│   ├── serverTCP.go    # Socket y manejo de conexiones
+│   ├── auth.go         # Manejo de autenticación de usuarios
 │   ├── commands.go     # Ejecución de comandos y monitoreo personalizado
+│   ├── connection.go   # Gestión de conexiones TCP
 │   ├── config.go       # Lectura de configuración
+│   ├── reporter.go     # Generación de reportes de recursos
 │   ├── config.conf     # Archivo de configuración
 │   └── users.db        # Base de datos de usuarios
-└── go.mod              # Dependencias del proyecto (crypto/sha256 de stdlib)
+├── docs/
+│   └── paper.pdf       # Documentación del proyecto
+└── go.mod              # Dependencias del proyecto
 ```
 
 ## Monitoreo de Recursos
@@ -119,11 +125,6 @@ El servidor monitorea en tiempo real:
    - Actualización periódica configurable
    - Datos en tiempo real del sistema
 
-## Requisitos del Sistema
-- **Cliente**: Windows 10 o superior
-- **Servidor**: Debian Linux
-- **Go**: versión 1.16 o superior
-
 ## Configuración y Ejecución
 
 ### Servidor (Debian)
@@ -135,7 +136,7 @@ El servidor monitorea en tiempo real:
    USUARIOS=maria,juan,pedro
    ```
 
-2. Configurar users.db con credenciales (formato usuario:hash):
+2. Configurar users.db con credenciales (formato usuario:hash26(password)):
    ```
    maria:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
    ```
@@ -155,11 +156,6 @@ El servidor monitorea en tiempo real:
 
 ## Manejo de Errores
 - Validación de IP del cliente
-- Timeout configurable para comandos (5 segundos)
+- Timeout configurable para comandos (2 segundos)
 - Mensajes de error personalizados con nombre de usuario
 - Reconexión automática dentro del límite de intentos
-
-## Limitaciones
-- Solo soporta comandos Unix en el servidor
-- Requiere permisos de administrador para algunos comandos
-- La autenticación es básica (no usa certificados SSL/TLS)
