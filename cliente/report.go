@@ -9,7 +9,7 @@ import (
 )
 
 // StartReport recibe y presenta periódicamente el reporte de consumo de recursos del servidor.
-func StartReport(conn net.Conn, username string) {
+func StartReport(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	for {

@@ -34,7 +34,7 @@ func main() {
 
 	// Iniciar la goroutine para recibir reportes
 	go func() {
-		StartReport(conn, username)
+		StartReport(conn)
 		done <- true
 	}()
 

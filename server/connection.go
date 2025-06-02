@@ -10,87 +10,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 )
 
-var (
-	commandMutex   sync.Mutex
-	activeClients  sync.WaitGroup
-	clientCount    int32
-	clientChannels = make(map[net.Conn]chan string)
-	channelsMutex  sync.RWMutex
-)
-
-// Estructura para manejar comandos concurrentemente
-type CommandRequest struct {
-	Command  string
-	User     string
-	Address  string
-	Response chan string
-}
-
-func procesarComandoConcurrente(cmd CommandRequest) {
-	defer close(cmd.Response)
-	commandMutex.Lock()
-	respuesta := ExecuteCommand(cmd.Command, cmd.User)
-	commandMutex.Unlock()
-	cmd.Response <- respuesta
-}
-
-func manejadorComandos(ctx context.Context) {
-	commandQueue := make(chan CommandRequest, 100)
-	const maxWorkers = 5
-	var wg sync.WaitGroup
-
-	// Iniciar workers para procesar comandos
-	for i := 0; i < maxWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case cmd, ok := <-commandQueue:
-					if !ok {
-						return
-					}
-					procesarComandoConcurrente(cmd)
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
-	}
-
-	// Esperar señal de apagado
-	<-ctx.Done()
-	close(commandQueue)
-	wg.Wait()
-}
-
-func enviarRespuestasCliente(conn net.Conn, respChan chan string) {
-	for respuesta := range respChan {
-		_, err := conn.Write([]byte(respuesta))
-		if err != nil {
-			fmt.Printf("Error al enviar respuesta a %s: %v\n", conn.RemoteAddr(), err)
-			return
-		}
-	}
-}
+var commandMutex sync.Mutex
 
 func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
-	defer func() {
-		socket.Close()
-		activeClients.Done()
-		atomic.AddInt32(&clientCount, -1)
-
-		// Limpiar el canal del cliente
-		channelsMutex.Lock()
-		if ch, exists := clientChannels[socket]; exists {
-			close(ch)
-			delete(clientChannels, socket)
-		}
-		channelsMutex.Unlock()
-	}()
+	defer socket.Close()
 
 	// Verificar que la IP del cliente está permitida
 	clienteIP := strings.Split(socket.RemoteAddr().String(), ":")[0]
@@ -104,15 +29,6 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 	socket.Write([]byte("IP_OK\n"))
 
 	reader := bufio.NewReader(socket)
-
-	// Crear canal para respuestas del cliente
-	respChan := make(chan string, 10)
-	channelsMutex.Lock()
-	clientChannels[socket] = respChan
-	channelsMutex.Unlock()
-
-	// Iniciar goroutine para enviar respuestas
-	go enviarRespuestasCliente(socket, respChan)
 
 	// Proceso de autenticación con intentos
 	intentos := config.IntentosFallidos
@@ -129,6 +45,7 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 			return
 		}
 		usuario = strings.TrimSpace(usuario)
+
 		// Verificar si el usuario existe en la base de datos
 		if !usuarioExisteEnBD(usuario) {
 			fmt.Printf("Usuario '%s' no encontrado en la base de datos\n", usuario)
@@ -141,7 +58,7 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 		if !usuarioPermitido(usuario, config) {
 			fmt.Printf("Usuario '%s' no está en la lista de usuarios permitidos de config.conf\n", usuario)
 			socket.Write([]byte("USER_NOT_ALLOWED\n"))
-			intentos-- // Ahora sí cuenta como intento cuando el usuario no está permitido
+			intentos--
 			continue
 		}
 
@@ -192,7 +109,9 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 			comando = strings.TrimSpace(comando)
 			if comando == "" {
 				continue
-			} // Verificar si es comando de configuración de periodo de reporte
+			}
+
+			// Verificar si es comando de configuración de periodo de reporte
 			if strings.HasPrefix(comando, "__SET_REPORT_PERIOD__") {
 				periodoStr := strings.TrimPrefix(comando, "__SET_REPORT_PERIOD__")
 				periodo, err := strconv.Atoi(periodoStr)
@@ -207,19 +126,10 @@ func manejarCliente(ctx context.Context, socket net.Conn, config *Config) {
 			}
 
 			// Procesar otros comandos
-			respChan := make(chan string, 1)
-			req := CommandRequest{
-				Command:  comando,
-				User:     usuario,
-				Address:  socket.RemoteAddr().String(),
-				Response: respChan,
-			}
+			commandMutex.Lock()
+			respuesta := ExecuteCommand(comando, usuario)
+			commandMutex.Unlock()
 
-			// Enviar comando para procesamiento
-			go procesarComandoConcurrente(req)
-
-			// Esperar respuesta
-			respuesta := <-respChan
 			_, err = socket.Write([]byte(respuesta))
 			if err != nil {
 				fmt.Printf("Error al enviar respuesta: %v\n", err)
@@ -245,9 +155,6 @@ func iniciarServidor() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Iniciar el manejador de comandos
-	go manejadorComandos(ctx)
-
 	// Crear socket TCP
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", config.Puerto))
 	if err != nil {
@@ -268,12 +175,9 @@ func iniciarServidor() {
 	}
 
 	fmt.Printf("Conexión aceptada desde: %s\n", socket.RemoteAddr().String())
-	activeClients.Add(1)
-	atomic.AddInt32(&clientCount, 1)
 
-	// Manejar cliente en el hilo principal (no en una goroutine)
+	// Manejar cliente en el hilo principal
 	manejarCliente(ctx, socket, config)
 
 	fmt.Println("Servidor finalizado después de atender a un cliente")
-	// El servidor termina después de atender a un cliente
 }
