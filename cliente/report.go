@@ -22,7 +22,6 @@ func StartReport(conn net.Conn, username string) {
 				if err == io.EOF {
 					return
 				}
-				fmt.Printf("Error al leer reporte: %v\n", err)
 				return
 			}
 

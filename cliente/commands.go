@@ -45,7 +45,6 @@ func RecibirRespuestas(conn net.Conn) {
 			if err == io.EOF {
 				return
 			}
-			fmt.Println("Error al recibir respuesta:", err)
 			continue
 		}
 
@@ -60,7 +59,7 @@ func RecibirRespuestas(conn net.Conn) {
 
 // leerRespuestaCompleta lee la respuesta completa del servidor
 func leerRespuestaCompleta(conn net.Conn) (string, error) {
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	defer conn.SetReadDeadline(time.Time{})
 
 	reader := bufio.NewReader(conn)
