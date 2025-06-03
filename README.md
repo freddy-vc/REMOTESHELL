@@ -39,25 +39,22 @@ Este proyecto implementa un sistema cliente-servidor que permite la ejecución r
 
 ```
 REMOTESHELL/
-├── cliente/
-│   ├── cliente.exe     # Ejecutable del cliente para Windows
-│   ├── main.go         # Punto de entrada y manejo de parámetros
-│   ├── connection.go   # Conexión al servidor y obtención de IP local
-│   ├── commands.go     # Ejecución de comandos con prompt personalizado
-│   ├── login.go        # Manejo de autenticación del usuario
-│   └── report.go       # Presentación de reportes
+├── client/
+│ ├── main.go           # Entry point and parameter handling
+│ ├── connection.go     # Connecting to the server and getting the local IP address
+│ ├── commands.go       # Running commands with a custom prompt
+│ ├── login.go          # Handling user authentication
+│ └── report.go         # Reporting
 ├── server/
-│   ├── main.go         # Punto de entrada
-│   ├── auth.go         # Manejo de autenticación de usuarios
-│   ├── commands.go     # Ejecución de comandos y monitoreo personalizado
-│   ├── connection.go   # Gestión de conexiones TCP
-│   ├── config.go       # Lectura de configuración
-│   ├── reporter.go     # Generación de reportes de recursos
-│   ├── config.conf     # Archivo de configuración
-│   └── users.db        # Base de datos de usuarios
-├── docs/
-│   └── paper.pdf       # Documentación del proyecto
-└── go.mod              # Dependencias del proyecto
+│ ├── main.go           # Entry point
+│ ├── auth.go           # Handling user authentication
+│ ├── commands.go       # Running commands and custom monitoring
+│ ├── connection.go     # Managing TCP connections
+│ ├── config.go         # Reading configuration
+│ ├── reporter.go       # Generating resource reports
+│ ├── config.conf       # Configuration file
+│ └── users.db          # User database
+└── go.mod              # Project dependencies
 ```
 
 ## Monitoreo de Recursos

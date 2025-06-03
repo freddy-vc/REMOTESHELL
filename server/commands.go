@@ -13,11 +13,6 @@ var (
 	cmdMutex   sync.Mutex
 )
 
-func init() {
-	// Inicializar el directorio actual
-	currentDir, _ = os.Getwd()
-}
-
 func ExecuteCommand(comando string, username string) string {
 	cmdMutex.Lock()
 	defer cmdMutex.Unlock()
